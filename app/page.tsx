@@ -1,0 +1,392 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+
+interface Product {
+  id?: string;
+  name: string;
+  cost: number;
+  price: number;
+  stock: number;
+  serial_number: string;
+  category: string;
+  image_url: string;
+  received_at: string;
+  is_sold: boolean;
+  sold_price: number | null;
+  commission_fee: number | null;
+  sold_at: string | null;
+}
+
+export default function HomeMonitor() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+
+  const [isInputModalOpen, setIsInputModalOpen] = useState(false);
+  const [isSellModalOpen, setIsSellModalOpen] = useState(false);
+
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const [name, setName] = useState('');
+  const [serialNumber, setSerialNumber] = useState('');
+  const [receivedAt, setReceivedAt] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [cost, setCost] = useState('');
+  const [price, setPrice] = useState('');
+  const [stock, setStock] = useState('1');
+  const [category, setCategory] = useState('IT / Gaming');
+
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [soldPrice, setSoldPrice] = useState('');
+  const [soldAt, setSoldAt] = useState('');
+
+  const fetchProducts = async () => {
+    try {
+      const response = await fetch('/api/products');
+      if (response.ok) {
+        const data = await response.json();
+        setProducts(Array.isArray(data) ? data.reverse() : []);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      fetchProducts();
+    }
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (isInputModalOpen) {
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      setReceivedAt(now.toISOString().slice(0, 16));
+    }
+  }, [isInputModalOpen]);
+
+  useEffect(() => {
+    if (isSellModalOpen) {
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      setSoldAt(now.toISOString().slice(0, 16));
+    }
+  }, [isSellModalOpen]);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === 'admin1234') { 
+      setIsLoggedIn(true);
+      setLoginError('');
+    } else {
+      setLoginError('❌ รหัสผ่านแอดมินไม่ถูกต้อง!');
+    }
+  };
+
+  const handleReceiveSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage('');
+
+    try {
+      const response = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          cost: parseFloat(cost) || 0,
+          price: parseFloat(price) || 0,
+          stock: parseInt(stock) || 1,
+          serial_number: serialNumber,
+          category,
+          image_url: imageUrl,
+          received_at: receivedAt.replace('T', ' '),
+          is_sold: false
+        }),
+      });
+
+      if (!response.ok) {
+        setMessage("เกิดข้อผิดพลาดในการบันทึกสต็อก");
+      } else {
+        setMessage("🎉 ลงทะเบียนสินค้าเข้าคลังใหม่สำเร็จ!");
+        setName(''); setSerialNumber(''); setImageUrl(''); setCost(''); setPrice('');
+        fetchProducts();
+        setTimeout(() => { setIsInputModalOpen(false); setMessage(''); }, 1200);
+      }
+    } catch (err: any) {
+      setMessage("ข้อผิดพลาด: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSellSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProduct) return;
+    setLoading(true);
+
+    const sPrice = parseFloat(soldPrice) || 0;
+    const commission = sPrice * 0.01;
+
+    try {
+      await fetch('/api/products', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: selectedProduct.name }),
+      });
+
+      const response = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: selectedProduct.name,
+          cost: selectedProduct.cost,
+          price: selectedProduct.price,
+          stock: 0,
+          serial_number: selectedProduct.serial_number,
+          category: selectedProduct.category,
+          image_url: selectedProduct.image_url,
+          received_at: selectedProduct.received_at,
+          is_sold: true,
+          sold_price: sPrice,
+          commission_fee: commission,
+          sold_at: soldAt.replace('T', ' ')
+        }),
+      });
+
+      if (response.ok) {
+        alert('🎉 ปิดดีลการขาย พร้อมหักภาษีค่านายหน้า 1% เข้าสต็อกเรียบร้อย!');
+        setSoldPrice('');
+        setIsSellModalOpen(false);
+        fetchProducts();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (productName: string) => {
+    if (!confirm(`ต้องการลบรายการคลัง "${productName}" ออกถาวรใช่ไหม?`)) return;
+    try {
+      const response = await fetch('/api/products', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: productName }),
+      });
+      if (response.ok) { fetchProducts(); }
+    } catch (err) { console.error(err); }
+  };
+
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
+        <form onSubmit={handleLogin} className="bg-[#1e293b] p-8 rounded-2xl shadow-2xl border border-slate-800 w-full max-w-md text-center">
+          <div className="text-4xl mb-3">🖥️</div>
+          <h2 className="text-xl font-black text-white mb-2">เข้าสู่แผง Monitor คลังสินค้า</h2>
+          <p className="text-slate-400 text-sm mb-6">กรุณากรอกรหัสผ่านเพื่อส่องแผงควบคุมหลัก</p>
+          <input type="password" placeholder="ป้อนรหัสผ่านระบบ..." value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-[#111827] text-white border border-slate-700 rounded-xl py-3 px-4 mb-4 text-center focus:outline-none focus:border-orange-500 font-bold tracking-widest" />
+          {loginError && <p className="text-red-400 text-xs font-semibold mb-4">{loginError}</p>}
+          <button type="submit" className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg">🔓 ยืนยันสิทธิ์เปิดบอร์ด</button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0f172a] text-slate-100 p-4 md:p-8">
+      <div className="max-w-7xl mx-auto flex flex-col gap-6">
+        
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#1e293b] p-5 rounded-2xl border border-slate-800 shadow-xl">
+          <div>
+            <h1 className="text-xl md:text-2xl font-black text-white flex items-center gap-2">🖥️ ERP Monitor & Stock Manager</h1>
+            <p className="text-slate-400 text-xs md:text-sm mt-1">บอร์ดสรุปงบการเงินคลังสินค้า ตรวจเช็กต้นทุนและประวัติขายหัก 1% เรียลไทม์</p>
+          </div>
+          <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
+            <button onClick={() => setIsInputModalOpen(true)} className="bg-orange-600 hover:bg-orange-500 text-white text-xs md:text-sm font-extrabold py-2.5 px-5 rounded-xl transition-all shadow-md">
+              📥 ลงทะเบียนรับสินค้า
+            </button>
+            <button onClick={() => setIsLoggedIn(false)} className="bg-slate-800 hover:bg-red-900/50 text-slate-400 border border-slate-700 text-xs md:text-sm font-bold py-2.5 px-4 rounded-xl">🚪 ล็อกเอาท์</button>
+          </div>
+        </div>
+
+        <div className="bg-[#1e293b] p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col gap-4">
+          <h2 className="font-bold text-slate-300 text-base border-b border-slate-800 pb-3">📦 รายการสินค้าและผลประกอบการทั้งหมด ({products.length} ชิ้น)</h2>
+
+          {products.length === 0 ? (
+            <div className="text-center py-24 text-slate-500 text-sm">คลังสินค้าว่างเปล่า กดปุ่มด้านบนเพื่อรับของเข้าคลังชิ้นแรกได้เลย</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 overflow-y-auto max-h-[650px] pb-6 pr-1">
+              {products.map((item) => {
+                const isSold = item.is_sold;
+                const cost = item.cost || 0;
+                const sellPrice = item.sold_price || 0;
+                const commission = item.commission_fee || 0;
+                const netProfit = isSold ? (sellPrice - cost - commission) : 0;
+
+                return (
+                  <div key={item.name} className={`p-4 rounded-xl border flex flex-col justify-between gap-4 transition-all shadow-md ${isSold ? 'bg-[#141b2b]/40 border-slate-800/60 opacity-70' : 'bg-[#111827] border-slate-800 hover:border-slate-700'}`}>
+                    <div className="flex items-start gap-3 min-w-0">
+                      <img src={item.image_url} alt="หลักฐานจัดซื้อ" className="w-16 h-16 rounded-xl object-cover bg-slate-800 shrink-0 border border-slate-800" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex justify-between items-center gap-2">
+                          <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-bold uppercase">{item.category}</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSold ? 'bg-rose-950 text-rose-400 border border-rose-900/40' : 'bg-emerald-950 text-emerald-400 border border-emerald-900/40'}`}>
+                            {isSold ? '🔴 จำหน่ายแล้ว' : `🟢 สต็อก (${item.stock} ชิ้น)`}
+                          </span>
+                        </div>
+                        <h4 className="font-bold text-white text-sm mt-2 leading-snug break-words">{item.name}</h4>
+                        <p className="text-[11px] text-slate-400 mt-1 font-mono">S/N: <span className="text-orange-400 font-bold">{item.serial_number || 'ไม่มีรหัส'}</span></p>
+                        <p className="text-[10px] text-slate-500 mt-0.5 font-mono">🕒 รับเข้า: {item.received_at}</p>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-800/80 pt-3 flex flex-col gap-2 bg-[#141b2b] -mx-4 -mb-4 p-4 rounded-b-xl">
+                      <div className="grid grid-cols-2 gap-2 text-xs text-slate-400">
+                        <div>💵 ต้นทุนคลัง: <span className="text-slate-200 font-bold">฿{cost.toLocaleString()}</span></div>
+                        {isSold ? (
+                          <>
+                            <div className="text-right">💰 ยอดขายออก: <span className="text-emerald-400 font-bold">฿{sellPrice.toLocaleString()}</span></div>
+                            <div className="text-slate-500 text-[10px]">✂️ หักนายหน้า 1%: <span className="text-amber-500">฿{commission.toLocaleString()}</span></div>
+                            <div className="text-right text-[10px] text-slate-500">📈 กำไรสุทธิ: <span className="text-amber-400 font-black">฿{netProfit.toLocaleString()}</span></div>
+                            <div className="col-span-2 text-center text-[10px] text-slate-500 border-t border-slate-800/60 pt-1.5 mt-1 font-mono">🕒 ขายเมื่อ: {item.sold_at}</div>
+                          </>
+                        ) : (
+                          <div className="text-right text-slate-500">ราคาตั้งขาย: <span className="text-slate-300 font-bold">฿{item.price.toLocaleString()}</span></div>
+                        )}
+                      </div>
+
+                      <div className="flex gap-2 mt-2 pt-2 border-t border-slate-800/40 justify-end">
+                        {!isSold && (
+                          <button 
+                            onClick={() => { setSelectedProduct(item); setIsSellModalOpen(true); }}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-4 rounded-lg transition-all"
+                          >
+                            💰 กดขายสินค้า
+                          </button>
+                        )}
+                        <button onClick={() => handleDelete(item.name)} className="bg-red-950/20 hover:bg-red-600 text-red-400 text-xs font-bold py-1.5 px-3 rounded-lg transition-all">🗑️ ลบ</button>
+                      </div>
+                    </div>
+
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {isInputModalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md relative">
+            <button onClick={() => { setIsInputModalOpen(false); setMessage(''); }} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 w-7 h-7 flex items-center justify-center rounded-full">✕</button>
+            <h2 className="font-bold text-orange-400 text-base border-b border-slate-800 pb-2">📥 ลงทะเบียนสินค้าเข้าคลังใหม่</h2>
+            
+            {message && <div className="p-3 rounded-xl text-center text-xs font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">{message}</div>}
+
+            <form onSubmit={handleReceiveSubmit} className="flex flex-col gap-3 text-xs">
+              <div>
+                <label className="text-slate-400 block mb-1 font-bold">1. ชื่อสินค้า</label>
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="เช่น บอร์ด Asus B760-I" />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1 font-bold">2. ซีเรียลนัมเบอร์ (S/N)</label>
+                <input type="text" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="ป้อนหมายเลขซีเรียลหลังกล่อง..." />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1 font-bold">3 & 7. ระบุวันที่และเวลารับของ</label>
+                <input type="datetime-local" value={receivedAt} onChange={(e) => setReceivedAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1 font-bold">4. ใส่ลิงก์รูปหลักฐานจัดซื้อ</label>
+                <input type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="https://ลิงก์รูปสลิปหรือใบเสร็จจัดซื้อ" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">5. ราคาทุน (Cost)</label>
+                  <input type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="฿ ต้นทุน" />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">6. ประเภทสินค้า</label>
+                  <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm">
+                    <option value="IT / Gaming">IT / Gaming</option>
+                    <option value="โต๊ะคอม / ตกแต่ง">โต๊ะคอม / ตกแต่ง</option>
+                    <option value="ของใช้ในบ้าน">ของใช้ในบ้าน</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">ราคาตั้งขายเบื้องต้น</label>
+                  <input type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="฿ ตั้งเป้าขาย" />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">จำนวนสินค้าเข้าคลัง</label>
+                  <input type="number" value={stock} onChange={(e) => setStock(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="จำนวนชิ้น" />
+                </div>
+              </div>
+              <button type="submit" disabled={loading} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 px-4 rounded-xl transition-all mt-2 text-sm">{loading ? '⏳ กำลังบันทึก...' : '🚀 บันทึกสินค้าเข้าสต็อกหลัก'}</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isSellModalOpen && selectedProduct && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md relative">
+            <button onClick={() => setIsSellModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 w-7 h-7 flex items-center justify-center rounded-full">✕</button>
+            <h2 className="font-bold text-emerald-400 text-base border-b border-slate-800 pb-2">💰 บันทึกปิดจ๊อบ - ใบเสร็จการขายสินค้า</h2>
+            
+            <div className="bg-[#111827] p-3 rounded-xl border border-slate-800 text-xs">
+              <p className="text-slate-400">สินค้าคลัง: <span className="text-white font-bold">{selectedProduct.name}</span></p>
+              <p className="text-slate-400 mt-1">ราคาทุนที่รับมา: <span className="text-orange-400 font-mono">฿{selectedProduct.cost.toLocaleString()}</span></p>
+            </div>
+
+            <form onSubmit={handleSellSubmit} className="flex flex-col gap-4 text-sm">
+              <div>
+                <label className="text-xs font-bold text-slate-400 block mb-1">1. กดใส่ราคาขายจริงที่ปิดได้</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  value={soldPrice} 
+                  onChange={(e) => setSoldPrice(e.target.value)} 
+                  required 
+                  className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-base font-bold focus:border-emerald-500 focus:outline-none" 
+                  placeholder="฿ ยอดเงินรวมที่ขายได้..." 
+                />
+                {soldPrice && (
+                  <p className="text-[11px] text-amber-400 mt-1.5 font-medium">
+                    🧮 2. คำนวณหัก 1% อัตโนมัติ: <span className="font-mono bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-900/40">฿{(parseFloat(soldPrice) * 0.01 || 0).toLocaleString()}</span>
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-400 block mb-1">3. ขายเมื่อไหร่ (ระบุวันเวลาที่ปิดการขาย)</label>
+                <input 
+                  type="datetime-local" 
+                  value={soldAt} 
+                  onChange={(e) => setSoldAt(e.target.value)} 
+                  required 
+                  className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono" 
+                />
+              </div>
+
+              <button type="submit" disabled={loading} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md mt-2">
+                {loading ? '⏳ กำลังตัดสต็อกคงเหลือ...' : '✅ ยืนยันปิดยอดการขายสำเร็จ'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
