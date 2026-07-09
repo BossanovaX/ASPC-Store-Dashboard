@@ -11,34 +11,35 @@ interface Product {
   serial_number: string;
   category: string;
   image_url: string;
-  received_at: string;
-  is_sold: boolean;
-  sold_price: number | null;
-  commission_fee: number | null;
-  sold_at: string | null;
+  is_sold?: boolean;
 }
 
 export default function HomeMonitor() {
+  // --- ระบบล็อกอินความปลอดภัยหน้าร้าน ---
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
+  // --- ระบบเปิด/ปิด Popup ---
   const [isInputModalOpen, setIsInputModalOpen] = useState(false);
   const [isSellModalOpen, setIsSellModalOpen] = useState(false);
 
+  // --- แหล่งเก็บข้อมูล ---
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
+  // 📥 ฟอร์มลงทะเบียนรับของเข้าคลัง (7 ข้อเวอร์ชันคลีนวันที่)
   const [name, setName] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
-  const [receivedAt, setReceivedAt] = useState('');
+  const [receivedAt, setReceivedAt] = useState(''); 
   const [imageUrl, setImageUrl] = useState('');
   const [cost, setCost] = useState('');
-  const [price, setPrice] = useState('');
-  const [stock, setStock] = useState('1');
+  const [price, setPrice] = useState(''); 
+  const [stock, setStock] = useState('1'); 
   const [category, setCategory] = useState('IT / Gaming');
 
+  // 📤 ฟอร์มบันทึกการขายออก
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [soldPrice, setSoldPrice] = useState('');
   const [soldAt, setSoldAt] = useState('');
@@ -65,7 +66,7 @@ export default function HomeMonitor() {
     if (isInputModalOpen) {
       const now = new Date();
       now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-      setReceivedAt(now.toISOString().slice(0, 16));
+      setReceivedAt(now.toISOString().slice(0, 10)); 
     }
   }, [isInputModalOpen]);
 
@@ -73,7 +74,7 @@ export default function HomeMonitor() {
     if (isSellModalOpen) {
       const now = new Date();
       now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-      setSoldAt(now.toISOString().slice(0, 16));
+      setSoldAt(now.toISOString().slice(0, 10));
     }
   }, [isSellModalOpen]);
 
@@ -92,17 +93,19 @@ export default function HomeMonitor() {
     setLoading(true);
     setMessage('');
 
+    const finalName = `${name} [รับเข้า: ${receivedAt}]`;
+
     try {
       const response = await fetch('/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: name,
+          name: finalName,
           cost: parseFloat(cost) || 0,
           price: parseFloat(price) || 0,
-          stock: parseFloat(stock) || 1, // ปรับให้เป็น parseFloat เพื่อรองรับ numeric
+          stock: parseFloat(stock) || 1,
           serial_number: serialNumber || '',
-          category: category || 'IT / Gaming',
+          category: category,
           image_url: imageUrl || 'https://picsum.photos/200'
         }),
       });
@@ -128,7 +131,10 @@ export default function HomeMonitor() {
     setLoading(true);
 
     const sPrice = parseFloat(soldPrice) || 0;
-    const commission = sPrice * 0.01;
+    const commission = sPrice * 0.01; 
+
+    // ฝังประวัติก้อนข้อมูลอย่างเป็นระเบียบเพื่อง่ายต่อการแกะมาคำนวณสรุปผล
+    const soldName = `${selectedProduct.name} [🔴 ขายแล้ว ฿${sPrice} | หัก 1%: ฿${commission} | เมื่อ: ${soldAt}]`;
 
     try {
       await fetch('/api/products', {
@@ -141,23 +147,18 @@ export default function HomeMonitor() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: selectedProduct.name,
+          name: soldName,
           cost: selectedProduct.cost,
-          price: selectedProduct.price,
-          stock: 0,
+          price: sPrice, 
+          stock: 0,      
           serial_number: selectedProduct.serial_number,
           category: selectedProduct.category,
-          image_url: selectedProduct.image_url,
-          received_at: selectedProduct.received_at,
-          is_sold: true,
-          sold_price: sPrice,
-          commission_fee: commission,
-          sold_at: soldAt.replace('T', ' ')
+          image_url: selectedProduct.image_url
         }),
       });
 
       if (response.ok) {
-        alert('🎉 ปิดดีลการขาย พร้อมหักภาษีค่านายหน้า 1% เข้าสต็อกเรียบร้อย!');
+        alert('🎉 บันทึกการขายและคำนวณหัก 1% สำเร็จ!');
         setSoldPrice('');
         setIsSellModalOpen(false);
         fetchProducts();
@@ -181,6 +182,36 @@ export default function HomeMonitor() {
     } catch (err) { console.error(err); }
   };
 
+  // ====================================================
+  // 🧮 เครื่องคำนวณบัญชีหลังบ้านประมวลผลสรุปยอดอัตโนมัติ
+  // ====================================================
+  let totalCostAll = 0;
+  let totalSalesAll = 0;
+  let totalCommissionAll = 0;
+  let totalProfitAll = 0;
+
+  products.forEach((item) => {
+    const isSold = item.name.includes('ขายแล้ว');
+    const cost = item.cost || 0;
+    
+    if (isSold) {
+      // ทำการแกะกล่องข้อมูลจากป้ายชื่อยาวๆ ออกมาคำนวณตัวเลขทางบัญชี
+      const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
+      const matchComm = item.name.match(/หัก 1%: ฿([\d.]+)/);
+      
+      const sPrice = matchPrice ? parseFloat(matchPrice[1]) : item.price;
+      const comm = matchComm ? parseFloat(matchComm[1]) : (sPrice * 0.01);
+      
+      totalSalesAll += sPrice;
+      totalCommissionAll += comm;
+      totalProfitAll += (sPrice - cost - comm);
+    } else {
+      totalCostAll += cost;
+    }
+  });
+
+  const onePercentOfProfit = totalProfitAll * 0.01;
+
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
@@ -200,10 +231,11 @@ export default function HomeMonitor() {
     <div className="min-h-screen bg-[#0f172a] text-slate-100 p-4 md:p-8">
       <div className="max-w-7xl mx-auto flex flex-col gap-6">
         
+        {/* แถบหัวเว็บมอนิเตอร์ */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#1e293b] p-5 rounded-2xl border border-slate-800 shadow-xl">
           <div>
             <h1 className="text-xl md:text-2xl font-black text-white flex items-center gap-2">🖥️ ERP Monitor & Stock Manager</h1>
-            <p className="text-slate-400 text-xs md:text-sm mt-1">บอร์ดสรุปงบการเงินคลังสินค้า ตรวจเช็กต้นทุนและประวัติขายหัก 1% เรียลไทม์</p>
+            <p className="text-slate-400 text-xs md:text-sm mt-1">บอร์ดสรุปคลังสินค้า ตรวจเช็กต้นทุนและประวัติขายหัก 1% เรียลไทม์</p>
           </div>
           <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
             <button onClick={() => setIsInputModalOpen(true)} className="bg-orange-600 hover:bg-orange-500 text-white text-xs md:text-sm font-extrabold py-2.5 px-5 rounded-xl transition-all shadow-md">
@@ -213,51 +245,95 @@ export default function HomeMonitor() {
           </div>
         </div>
 
+        {/* ==================================================== */}
+        {/* 📊 หน้ากระดานแสดง แผงสรุปผลกำไรและการบัญชีรายเดือน */}
+        {/* ==================================================== */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-[#1e293b] p-5 rounded-2xl border border-slate-800 shadow-lg">
+            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">🛒 ยอดขายสะสมเดือนนี้</div>
+            <div className="text-2xl font-black text-emerald-400 mt-1">฿{totalSalesAll.toLocaleString()}</div>
+          </div>
+          <div className="bg-[#1e293b] p-5 rounded-2xl border border-slate-800 shadow-lg">
+            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">✂️ ยอดหัก 1% จากยอดขายทั้งหมด</div>
+            <div className="text-2xl font-black text-amber-500 mt-1">฿{totalCommissionAll.toLocaleString()}</div>
+          </div>
+          <div className="bg-[#1e293b] p-5 rounded-2xl border border-slate-800 shadow-lg">
+            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">📈 กำไรสุทธิรวม (หลังหัก 1%)</div>
+            <div className="text-2xl font-black text-orange-400 mt-1">฿{totalProfitAll.toLocaleString()}</div>
+          </div>
+          <div className="bg-[#1e293b] p-5 rounded-2xl border border-slate-800 shadow-lg">
+            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">🪙 1% ของกำไรสุทธิ</div>
+            <div className="text-2xl font-black text-indigo-400 mt-1">฿{onePercentOfProfit.toLocaleString()}</div>
+          </div>
+        </div>
+
+        {/* แผง Monitor รายการสินค้า */}
         <div className="bg-[#1e293b] p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col gap-4">
-          <h2 className="font-bold text-slate-300 text-base border-b border-slate-800 pb-3">📦 รายการสินค้าและผลประกอบการทั้งหมด ({products.length} ชิ้น)</h2>
+          <h2 className="font-bold text-slate-300 text-base border-b border-slate-800 pb-3">📦 ตู้สต็อกสินค้าและบันทึกประวัติทางการเงินทั้งหมด ({products.length} รายการ)</h2>
 
           {products.length === 0 ? (
             <div className="text-center py-24 text-slate-500 text-sm">คลังสินค้าว่างเปล่า กดปุ่มด้านบนเพื่อรับของเข้าคลังชิ้นแรกได้เลย</div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 overflow-y-auto max-h-[650px] pb-6 pr-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 overflow-y-auto max-h-[650px] pb-6 pr-1 no-scrollbar">
               {products.map((item) => {
-                const isSold = item.is_sold;
+                const isSold = item.name.includes('ขายแล้ว');
                 const cost = item.cost || 0;
-                const sellPrice = item.sold_price || 0;
-                const commission = item.commission_fee || 0;
-                const netProfit = isSold ? (sellPrice - cost - commission) : 0;
+
+                // ตัวสกัดแกะก้อนความจำมาจัดแจงเลย์เอาท์ความหล่อด้านหน้าจอ
+                const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
+                const matchComm = item.name.match(/หัก 1%: ฿([\d.]+)/);
+                const matchTime = item.name.match(/เมื่อ: ([\d-]+)/);
+
+                const sellPrice = matchPrice ? parseFloat(matchPrice[1]) : item.price;
+                const commission = matchComm ? parseFloat(matchComm[1]) : (sellPrice * 0.01);
+                const sellDate = matchTime ? matchTime[1] : 'ไม่ระบุวัน';
+
+                // วิธีล้างสตริงชื่อสินค้าแบบคลีน ๆ ให้เหลือแค่ชื่อวัตถุสวยงามเวลารันจอ
+                const cleanName = item.name.split(' [รับเข้า:')[0];
 
                 return (
-                  <div key={item.name} className={`p-4 rounded-xl border flex flex-col justify-between gap-4 transition-all shadow-md ${isSold ? 'bg-[#141b2b]/40 border-slate-800/60 opacity-70' : 'bg-[#111827] border-slate-800 hover:border-slate-700'}`}>
+                  <div key={item.name} className={`p-4 rounded-xl border flex flex-col justify-between gap-4 transition-all shadow-md ${isSold ? 'bg-[#141b2b]/30 border-slate-900/60 opacity-80' : 'bg-[#111827] border-slate-800 hover:border-slate-700'}`}>
                     <div className="flex items-start gap-3 min-w-0">
-                      <img src={item.image_url} alt="หลักฐานจัดซื้อ" className="w-16 h-16 rounded-xl object-cover bg-slate-800 shrink-0 border border-slate-800" />
+                      <img src={item.image_url} alt="รูป" className="w-16 h-16 rounded-xl object-cover bg-slate-800 shrink-0 border border-slate-800" />
                       <div className="min-w-0 flex-1">
                         <div className="flex justify-between items-center gap-2">
                           <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-bold uppercase">{item.category}</span>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSold ? 'bg-rose-950 text-rose-400 border border-rose-900/40' : 'bg-emerald-950 text-emerald-400 border border-emerald-900/40'}`}>
-                            {isSold ? '🔴 จำหน่ายแล้ว' : `🟢 สต็อก (${item.stock} ชิ้น)`}
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSold ? 'bg-rose-950/60 text-rose-400 border border-rose-900/30' : 'bg-emerald-950 text-emerald-400 border border-emerald-900/40'}`}>
+                            {isSold ? '🔴 จำหน่ายออกแล้ว' : `🟢 สต็อก (${item.stock} ชิ้น)`}
                           </span>
                         </div>
-                        <h4 className="font-bold text-white text-sm mt-2 leading-snug break-words">{item.name}</h4>
+                        <h4 className="font-bold text-white text-sm mt-2 leading-snug break-words">{cleanName}</h4>
                         <p className="text-[11px] text-slate-400 mt-1 font-mono">S/N: <span className="text-orange-400 font-bold">{item.serial_number || 'ไม่มีรหัส'}</span></p>
-                        <p className="text-[10px] text-slate-500 mt-0.5 font-mono">🕒 รับเข้า: {item.received_at}</p>
                       </div>
                     </div>
 
-                    <div className="border-t border-slate-800/80 pt-3 flex flex-col gap-2 bg-[#141b2b] -mx-4 -mb-4 p-4 rounded-b-xl">
-                      <div className="grid grid-cols-2 gap-2 text-xs text-slate-400">
-                        <div>💵 ต้นทุนคลัง: <span className="text-slate-200 font-bold">฿{cost.toLocaleString()}</span></div>
-                        {isSold ? (
-                          <>
-                            <div className="text-right">💰 ยอดขายออก: <span className="text-emerald-400 font-bold">฿{sellPrice.toLocaleString()}</span></div>
-                            <div className="text-slate-500 text-[10px]">✂️ หักนายหน้า 1%: <span className="text-amber-500">฿{commission.toLocaleString()}</span></div>
-                            <div className="text-right text-[10px] text-slate-500">📈 กำไรสุทธิ: <span className="text-amber-400 font-black">฿{netProfit.toLocaleString()}</span></div>
-                            <div className="col-span-2 text-center text-[10px] text-slate-500 border-t border-slate-800/60 pt-1.5 mt-1 font-mono">🕒 ขายเมื่อ: {item.sold_at}</div>
-                          </>
-                        ) : (
-                          <div className="text-right text-slate-500">ราคาตั้งขาย: <span className="text-slate-300 font-bold">฿{item.price.toLocaleString()}</span></div>
-                        )}
+                    <div className="border-t border-slate-800/80 pt-3 flex flex-col gap-2 bg-[#141b2b] -mx-4 -mb-4 p-4 rounded-b-xl text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">💵 ต้นทุนรับเข้า:</span>
+                        <span className="text-slate-200 font-bold">฿{cost.toLocaleString()}</span>
                       </div>
+
+                      {isSold ? (
+                        <div className="flex flex-col gap-1.5 bg-[#0f172a]/60 p-2.5 rounded-lg border border-slate-900 mt-1">
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">💰 ราคาที่ขายได้:</span>
+                            <span className="text-emerald-400 font-black">฿{sellPrice.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between text-[11px]">
+                            <span className="text-slate-500">✂️ ค่านายหน้าหัก 1%:</span>
+                            <span className="text-amber-500 font-mono">฿{commission.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between text-[11px] border-t border-slate-800/80 pt-1 mt-1">
+                            <span className="text-slate-400">📅 วันที่ปิดดีลขาย:</span>
+                            <span className="text-slate-300 font-mono">{sellDate}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">🏷️ ราคาตั้งขาย:</span>
+                          <span className="text-slate-300 font-bold">฿{item.price.toLocaleString()}</span>
+                        </div>
+                      )}
 
                       <div className="flex gap-2 mt-2 pt-2 border-t border-slate-800/40 justify-end">
                         {!isSold && (
@@ -265,7 +341,7 @@ export default function HomeMonitor() {
                             onClick={() => { setSelectedProduct(item); setIsSellModalOpen(true); }}
                             className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-4 rounded-lg transition-all"
                           >
-                            💰 กดขายสินค้า
+                            💰 บันทึกขายออก
                           </button>
                         )}
                         <button onClick={() => handleDelete(item.name)} className="bg-red-950/20 hover:bg-red-600 text-red-400 text-xs font-bold py-1.5 px-3 rounded-lg transition-all">🗑️ ลบ</button>
@@ -281,6 +357,7 @@ export default function HomeMonitor() {
 
       </div>
 
+      {/* 📥 POPUP 1: ลงทะเบียนของเข้าคลัง */}
       {isInputModalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md relative">
@@ -296,15 +373,15 @@ export default function HomeMonitor() {
               </div>
               <div>
                 <label className="text-slate-400 block mb-1 font-bold">2. ซีเรียลนัมเบอร์ (S/N)</label>
-                <input type="text" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="ป้อนหมายเลขซีเรียลหลังกล่อง..." />
+                <input type="text" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="ป้อนหมายเลขซีเรียล..." />
               </div>
               <div>
-                <label className="text-slate-400 block mb-1 font-bold">3 & 7. ระบุวันที่และเวลารับของ</label>
-                <input type="datetime-local" value={receivedAt} onChange={(e) => setReceivedAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
+                <label className="text-slate-400 block mb-1 font-bold">3 & 7. ระบุวันที่รับของ</label>
+                <input type="date" value={receivedAt} onChange={(e) => setReceivedAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
               </div>
               <div>
                 <label className="text-slate-400 block mb-1 font-bold">4. ใส่ลิงก์รูปหลักฐานจัดซื้อ</label>
-                <input type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="https://ลิงก์รูปสลิปหรือใบเสร็จจัดซื้อ" />
+                <input type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="https://ลิงก์รูปหลักฐานจัดซื้อ" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -336,29 +413,22 @@ export default function HomeMonitor() {
         </div>
       )}
 
+      {/* 📤 POPUP 2: บันทึกการขายออก */}
       {isSellModalOpen && selectedProduct && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md relative">
             <button onClick={() => setIsSellModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 w-7 h-7 flex items-center justify-center rounded-full">✕</button>
-            <h2 className="font-bold text-emerald-400 text-base border-b border-slate-800 pb-2">💰 บันทึกปิดจ๊อบ - ใบเสร็จการขายสินค้า</h2>
+            <h2 className="font-bold text-emerald-400 text-base border-b border-slate-800 pb-2">💰 บันทึกยอดขายสินค้า</h2>
             
             <div className="bg-[#111827] p-3 rounded-xl border border-slate-800 text-xs">
-              <p className="text-slate-400">สินค้าคลัง: <span className="text-white font-bold">{selectedProduct.name}</span></p>
-              <p className="text-slate-400 mt-1">ราคาทุนที่รับมา: <span className="text-orange-400 font-mono">฿{selectedProduct.cost.toLocaleString()}</span></p>
+              <p className="text-slate-400">สินค้า: <span className="text-white font-bold">{selectedProduct.name.split(' [')[0]}</span></p>
+              <p className="text-slate-400 mt-1">ราคาทุน: <span className="text-orange-400 font-mono">฿{selectedProduct.cost.toLocaleString()}</span></p>
             </div>
 
             <form onSubmit={handleSellSubmit} className="flex flex-col gap-4 text-sm">
               <div>
-                <label className="text-xs font-bold text-slate-400 block mb-1">1. กดใส่ราคาขายจริงที่ปิดได้</label>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  value={soldPrice} 
-                  onChange={(e) => setSoldPrice(e.target.value)} 
-                  required 
-                  className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-base font-bold focus:border-emerald-500 focus:outline-none" 
-                  placeholder="฿ ยอดเงินรวมที่ขายได้..." 
-                />
+                <label className="text-xs font-bold text-slate-400 block mb-1">1. ใส่ราคาขายจริงที่ปิดดีลได้</label>
+                <input type="number" step="0.01" value={soldPrice} onChange={(e) => setSoldPrice(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-base font-bold focus:border-emerald-500 focus:outline-none" placeholder="฿ ยอดขายปิดดีล..." />
                 {soldPrice && (
                   <p className="text-[11px] text-amber-400 mt-1.5 font-medium">
                     🧮 2. คำนวณหัก 1% อัตโนมัติ: <span className="font-mono bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-900/40">฿{(parseFloat(soldPrice) * 0.01 || 0).toLocaleString()}</span>
@@ -367,18 +437,12 @@ export default function HomeMonitor() {
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-400 block mb-1">3. ขายเมื่อไหร่ (ระบุวันเวลาที่ปิดการขาย)</label>
-                <input 
-                  type="datetime-local" 
-                  value={soldAt} 
-                  onChange={(e) => setSoldAt(e.target.value)} 
-                  required 
-                  className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono" 
-                />
+                <label className="text-xs font-bold text-slate-400 block mb-1">3. ขายเมื่อไหร่ (ระบุวันที่ปิดการขาย)</label>
+                <input type="date" value={soldAt} onChange={(e) => setSoldAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono" />
               </div>
 
               <button type="submit" disabled={loading} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md mt-2">
-                {loading ? '⏳ กำลังตัดสต็อกคงเหลือ...' : '✅ ยืนยันปิดยอดการขายสำเร็จ'}
+                {loading ? '⏳ กำลังบันทึกยอดขาย...' : '✅ ยืนยันปิดดีลขายสำเร็จ'}
               </button>
             </form>
           </div>
