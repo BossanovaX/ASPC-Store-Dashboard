@@ -117,7 +117,7 @@ export default function HomeMonitor() {
 
   const handleReceiveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    loading || setLoading(true);
     setMessage('');
     
     try {
@@ -279,6 +279,37 @@ export default function HomeMonitor() {
     }
   });
 
+  // 🔐 --- หน้าต่างความปลอดภัย: หากยังไม่ได้ล็อกอิน ให้กรอกรหัสผ่านก่อน ---
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
+        <form onSubmit={handleLogin} className="bg-[#1e293b] p-6 rounded-2xl border border-slate-800 shadow-2xl w-full max-w-sm flex flex-col gap-4">
+          <div className="text-center">
+            <h2 className="text-xl font-black text-white">🔐 ERP Login</h2>
+            <p className="text-slate-400 text-xs mt-1">กรุณากรอกรหัสผ่านแอดมินเพื่อเข้าสู่บอร์ดควบคุม</p>
+          </div>
+          {loginError && (
+            <div className="text-xs text-red-400 bg-red-950/40 border border-red-900 p-2.5 rounded-xl text-center font-bold animate-pulse">
+              {loginError}
+            </div>
+          )}
+          <input 
+            type="password" 
+            value={password} 
+            onChange={(e) => setPassword(e.target.value)} 
+            placeholder="รหัสผ่านแอดมิน..." 
+            className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm text-center focus:border-orange-500 focus:outline-none font-mono"
+            required 
+          />
+          <button type="submit" className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-md">
+            🔓 เข้าสู่ระบบ
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  // 🖥️ --- บอร์ดมอนิเตอร์หลัก (แสดงหลังล็อกอินสำเร็จ) ---
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-100 p-4 md:p-8">
       <div className="max-w-7xl mx-auto flex flex-col gap-6">
@@ -291,7 +322,7 @@ export default function HomeMonitor() {
           </div>
           <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
             <button onClick={() => setIsInputModalOpen(true)} className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-extrabold py-2.5 px-5 rounded-xl shadow-md">📥 ลงทะเบียนรับสินค้า</button>
-            <button onClick={() => setIsLoggedIn(false)} className="bg-slate-800 text-slate-400 border border-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl">🚪 ออก</button>
+            <button onClick={() => { setIsLoggedIn(false); setPassword(''); }} className="bg-slate-800 text-slate-400 border border-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl">🚪 ออก</button>
           </div>
         </div>
 
@@ -477,7 +508,6 @@ export default function HomeMonitor() {
                 <input type="date" value={receivedAt} onChange={(e) => setReceivedAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
               </div>
               
-              {/* 📸 ปรับข้อ 4 เป็นอินพุตไฟล์รูปภาพสินค้าจริง ยิงตรงเข้า Database */}
               <div>
                 <label className="text-orange-400 block mb-1 font-bold">4. 📸 เลือกอัปโหลดไฟล์รูปภาพสินค้าจริง (ยิงเข้า Database)</label>
                 <input type="file" accept="image/*" onChange={(e) => setProductFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
@@ -547,7 +577,7 @@ export default function HomeMonitor() {
                   <div className="flex justify-between">
                     <span>💵 สูตรกำไรเบื้องต้น (ขาย - ทุน - แพ็ก30 - ส่ง):</span>
                     <span className="text-slate-200 font-mono">
-                      ฿{(parseFloat(soldPrice) - selectedProduct.cost - 30 - (parseFloat(shippingFee) || 0)).toLocaleString(undefined, {minimumFractionDigits: 2})}
+                      ฿{(parseFloat(soldPrice) - selectedProduct.cost - 30 - (parseFloat(shippingFee) || 0)).toLocaleString(undefined, {maximumFractionDigits: 2})}
                     </span>
                   </div>
                   <div className="flex justify-between text-amber-400 font-medium">
@@ -555,19 +585,17 @@ export default function HomeMonitor() {
                     <span className="font-mono">
                       ฿{((parseFloat(soldPrice) - selectedProduct.cost - 30 - (parseFloat(shippingFee) || 0)) > 0 
                         ? (parseFloat(soldPrice) - selectedProduct.cost - 30 - (parseFloat(shippingFee) || 0)) * 0.03 
-                        : 0).toLocaleString(undefined, {minimumFractionDigits: 2})}
+                        : 0).toLocaleString(undefined, {maximumFractionDigits: 2})}
                     </span>
                   </div>
                 </div>
               )}
 
-              {/* 🧾 อัปเกรดอินพุตไฟล์สลิปขนส่งของจริง */}
               <div>
                 <label className="text-emerald-400 font-bold block mb-1">🧾 อัปโหลดไฟล์ภาพสลิปใบเสร็จค่าขนส่ง</label>
                 <input type="file" accept="image/*" onChange={(e) => setSlipFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
 
-              {/* 📸 อัปเกรดอินพุตไฟล์รูปภาพแพ็กของเพิ่ม 1 บรรทัดของจริง */}
               <div>
                 <label className="text-emerald-400 font-bold block mb-1">📸 อัปโหลดไฟล์รูปถ่ายสินค้าตอนแพ็กหรือส่ง (เพิ่มเติม)</label>
                 <input type="file" accept="image/*" onChange={(e) => setPackageFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
