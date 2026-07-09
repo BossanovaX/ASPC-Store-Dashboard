@@ -97,15 +97,13 @@ export default function HomeMonitor() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name,
+          name: name,
           cost: parseFloat(cost) || 0,
           price: parseFloat(price) || 0,
-          stock: parseInt(stock) || 1,
-          serial_number: serialNumber,
-          category,
-          image_url: imageUrl,
-          received_at: receivedAt.replace('T', ' '),
-          is_sold: false
+          stock: parseFloat(stock) || 1, // ปรับให้เป็น parseFloat เพื่อรองรับ numeric
+          serial_number: serialNumber || '',
+          category: category || 'IT / Gaming',
+          image_url: imageUrl || 'https://picsum.photos/200'
         }),
       });
 

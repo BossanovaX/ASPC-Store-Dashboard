@@ -4,6 +4,8 @@ import { supabase } from '../../../lib/supabase';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    
+    // บังคับส่งเฉพาะ 7 คอลัมน์ที่มีอยู่จริงบนหน้าเว็บ Supabase ของคุณเป๊ะๆ ห้ามมีส่วนเกิน
     const { data, error } = await supabase.from('products').insert([
       {
         name: body.name,
@@ -12,21 +14,21 @@ export async function POST(request: Request) {
         stock: body.stock,
         serial_number: body.serial_number,
         category: body.category,
-        image_url: body.image_url,
-        received_at: body.received_at,
-        is_sold: body.is_sold ?? false,
-        sold_price: body.sold_price ?? null,
-        commission_fee: body.commission_fee ?? null,
-        sold_at: body.sold_at ?? null,
+        image_url: body.image_url
       }
     ]);
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     return NextResponse.json({ success: true, data });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
+// 2. ท่อดึงรายการสินค้ามาแสดงบนหน้า Monitor (GET)
 export async function GET() {
   try {
     const { data, error } = await supabase.from('products').select('*');
@@ -37,6 +39,7 @@ export async function GET() {
   }
 }
 
+// 3. ท่อสั่งลบสินค้าออกจากคลัง (DELETE)
 export async function DELETE(request: Request) {
   try {
     const { name } = await request.json();
