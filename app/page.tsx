@@ -24,12 +24,15 @@ export default function HomeMonitor() {
   const [isInputModalOpen, setIsInputModalOpen] = useState(false);
   const [isSellModalOpen, setIsSellModalOpen] = useState(false);
 
+  // --- 🌟 ระบบ Filter เลือกหมวดหมู่ (เริ่มต้นที่ 'ทั้งหมด') ---
+  const [selectedTab, setSelectedTab] = useState('ทั้งหมด');
+
   // --- แหล่งเก็บข้อมูล ---
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  // 📥 ฟอร์มลงทะเบียนรับของเข้าคลัง (7 ข้อเวอร์ชันคลีนวันที่)
+  // 📥 ฟอร์มลงทะเบียนรับของเข้าคลัง (ปรับหมวดหมู่เริ่มต้นเป็น CPU)
   const [name, setName] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
   const [receivedAt, setReceivedAt] = useState(''); 
@@ -37,7 +40,7 @@ export default function HomeMonitor() {
   const [cost, setCost] = useState('');
   const [price, setPrice] = useState(''); 
   const [stock, setStock] = useState('1'); 
-  const [category, setCategory] = useState('IT / Gaming');
+  const [category, setCategory] = useState('CPU'); // 🌟 เริ่มที่ CPU ตามเซ็ตใหม่
 
   // 📤 ฟอร์มบันทึกการขายออก
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -133,7 +136,6 @@ export default function HomeMonitor() {
     const sPrice = parseFloat(soldPrice) || 0;
     const commission = sPrice * 0.01; 
 
-    // ฝังประวัติก้อนข้อมูลอย่างเป็นระเบียบเพื่อง่ายต่อการแกะมาคำนวณสรุปผล
     const soldName = `${selectedProduct.name} [🔴 ขายแล้ว ฿${sPrice} | หัก 1%: ฿${commission} | เมื่อ: ${soldAt}]`;
 
     try {
@@ -183,19 +185,26 @@ export default function HomeMonitor() {
   };
 
   // ====================================================
-  // 🧮 เครื่องคำนวณบัญชีหลังบ้านประมวลผลสรุปยอดอัตโนมัติ
+  // 🔍 1. ตัวกรองข้อมูลเพื่อแบ่งหมวดหมู่ก่อนนำไปคำนวณและแสดงผล
+  // ====================================================
+  const filteredProducts = products.filter((item) => {
+    if (selectedTab === 'ทั้งหมด') return true;
+    return item.category === selectedTab;
+  });
+
+  // ====================================================
+  // 🧮 2. คำนวณบัญชีแยกตามหมวดหมู่ที่เลือกแบบ Realtime
   // ====================================================
   let totalCostAll = 0;
   let totalSalesAll = 0;
   let totalCommissionAll = 0;
   let totalProfitAll = 0;
 
-  products.forEach((item) => {
+  filteredProducts.forEach((item) => {
     const isSold = item.name.includes('ขายแล้ว');
     const cost = item.cost || 0;
     
     if (isSold) {
-      // ทำการแกะกล่องข้อมูลจากป้ายชื่อยาวๆ ออกมาคำนวณตัวเลขทางบัญชี
       const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
       const matchComm = item.name.match(/หัก 1%: ฿([\d.]+)/);
       
@@ -245,41 +254,53 @@ export default function HomeMonitor() {
           </div>
         </div>
 
-        {/* ==================================================== */}
-        {/* 📊 หน้ากระดานแสดง แผงสรุปผลกำไรและการบัญชีรายเดือน */}
-        {/* ==================================================== */}
+        {/* 📊 แผงสรุปผลกำไรรายหมวดหมู่ */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-[#1e293b] p-5 rounded-2xl border border-slate-800 shadow-lg">
-            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">🛒 ยอดขายสะสมเดือนนี้</div>
+            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">🛒 ยอดขาย ({selectedTab})</div>
             <div className="text-2xl font-black text-emerald-400 mt-1">฿{totalSalesAll.toLocaleString()}</div>
           </div>
           <div className="bg-[#1e293b] p-5 rounded-2xl border border-slate-800 shadow-lg">
-            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">✂️ ยอดหัก 1% จากยอดขายทั้งหมด</div>
+            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">✂️ หัก 1% ของยอดขาย ({selectedTab})</div>
             <div className="text-2xl font-black text-amber-500 mt-1">฿{totalCommissionAll.toLocaleString()}</div>
           </div>
           <div className="bg-[#1e293b] p-5 rounded-2xl border border-slate-800 shadow-lg">
-            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">📈 กำไรสุทธิรวม (หลังหัก 1%)</div>
+            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">📈 กำไรสุทธิ ({selectedTab})</div>
             <div className="text-2xl font-black text-orange-400 mt-1">฿{totalProfitAll.toLocaleString()}</div>
           </div>
           <div className="bg-[#1e293b] p-5 rounded-2xl border border-slate-800 shadow-lg">
-            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">🪙 1% ของกำไรสุทธิ</div>
+            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">🪙 1% ของกำไร ({selectedTab})</div>
             <div className="text-2xl font-black text-indigo-400 mt-1">฿{onePercentOfProfit.toLocaleString()}</div>
           </div>
         </div>
 
+        {/* ==================================================== */}
+        {/* 🌟 3. แถบปุ่มคลิกเลือกหมวดหมู่ อะไหล่ PC สะอาดตา */}
+        {/* ==================================================== */}
+        <div className="flex flex-wrap gap-2 bg-[#1e293b] p-3 rounded-xl border border-slate-800">
+          {['ทั้งหมด', 'CPU', 'GPU', 'Memory', 'Mainboard', 'Storage', 'Power Supply / Case'].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setSelectedTab(tab)}
+              className={`text-xs md:text-sm font-bold py-2 px-4 rounded-lg transition-all ${selectedTab === tab ? 'bg-orange-600 text-white shadow-md' : 'bg-[#111827] text-slate-400 hover:text-white hover:bg-slate-800'}`}
+            >
+              {tab === 'ทั้งหมด' ? '🌐 รวมทุกชนิด' : tab}
+            </button>
+          ))}
+        </div>
+
         {/* แผง Monitor รายการสินค้า */}
         <div className="bg-[#1e293b] p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col gap-4">
-          <h2 className="font-bold text-slate-300 text-base border-b border-slate-800 pb-3">📦 ตู้สต็อกสินค้าและบันทึกประวัติทางการเงินทั้งหมด ({products.length} รายการ)</h2>
+          <h2 className="font-bold text-slate-300 text-base border-b border-slate-800 pb-3">📦 ตู้สต็อกสินค้าและบันทึกประวัติทางการเงิน ({selectedTab}) ({filteredProducts.length} รายการ)</h2>
 
-          {products.length === 0 ? (
-            <div className="text-center py-24 text-slate-500 text-sm">คลังสินค้าว่างเปล่า กดปุ่มด้านบนเพื่อรับของเข้าคลังชิ้นแรกได้เลย</div>
+          {filteredProducts.length === 0 ? (
+            <div className="text-center py-24 text-slate-500 text-sm">ยังไม่มีรายการสินค้าในหมวดหมู่ {selectedTab}</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 overflow-y-auto max-h-[650px] pb-6 pr-1 no-scrollbar">
-              {products.map((item) => {
+              {filteredProducts.map((item) => {
                 const isSold = item.name.includes('ขายแล้ว');
                 const cost = item.cost || 0;
 
-                // ตัวสกัดแกะก้อนความจำมาจัดแจงเลย์เอาท์ความหล่อด้านหน้าจอ
                 const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
                 const matchComm = item.name.match(/หัก 1%: ฿([\d.]+)/);
                 const matchTime = item.name.match(/เมื่อ: ([\d-]+)/);
@@ -288,7 +309,6 @@ export default function HomeMonitor() {
                 const commission = matchComm ? parseFloat(matchComm[1]) : (sellPrice * 0.01);
                 const sellDate = matchTime ? matchTime[1] : 'ไม่ระบุวัน';
 
-                // วิธีล้างสตริงชื่อสินค้าแบบคลีน ๆ ให้เหลือแค่ชื่อวัตถุสวยงามเวลารันจอ
                 const cleanName = item.name.split(' [รับเข้า:')[0];
 
                 return (
@@ -297,7 +317,7 @@ export default function HomeMonitor() {
                       <img src={item.image_url} alt="รูป" className="w-16 h-16 rounded-xl object-cover bg-slate-800 shrink-0 border border-slate-800" />
                       <div className="min-w-0 flex-1">
                         <div className="flex justify-between items-center gap-2">
-                          <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-bold uppercase">{item.category}</span>
+                          <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-extrabold uppercase border border-slate-700">{item.category}</span>
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSold ? 'bg-rose-950/60 text-rose-400 border border-rose-900/30' : 'bg-emerald-950 text-emerald-400 border border-emerald-900/40'}`}>
                             {isSold ? '🔴 จำหน่ายออกแล้ว' : `🟢 สต็อก (${item.stock} ชิ้น)`}
                           </span>
@@ -357,7 +377,7 @@ export default function HomeMonitor() {
 
       </div>
 
-      {/* 📥 POPUP 1: ลงทะเบียนของเข้าคลัง */}
+      {/* 📥 POPUP 1: ลงทะเบียนของเข้าคลัง (อัปเดตหมวดหมู่เป็นอะไหล่ PC แท้) */}
       {isInputModalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md relative">
@@ -369,19 +389,19 @@ export default function HomeMonitor() {
             <form onSubmit={handleReceiveSubmit} className="flex flex-col gap-3 text-xs">
               <div>
                 <label className="text-slate-400 block mb-1 font-bold">1. ชื่อสินค้า</label>
-                <input type="text" value={name} onChange={(e) => setName(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="เช่น บอร์ด Asus B760-I" />
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="เช่น Intel Core i5-14600K" />
               </div>
               <div>
                 <label className="text-slate-400 block mb-1 font-bold">2. ซีเรียลนัมเบอร์ (S/N)</label>
                 <input type="text" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="ป้อนหมายเลขซีเรียล..." />
               </div>
               <div>
-                <label className="text-slate-400 block mb-1 font-bold">3 & 7. ระบุวันที่รับของ</label>
+                <label className="text-slate-400 block mb-1 font-bold">3. ระบุวันที่รับของ</label>
                 <input type="date" value={receivedAt} onChange={(e) => setReceivedAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
               </div>
               <div>
                 <label className="text-slate-400 block mb-1 font-bold">4. ใส่ลิงก์รูปหลักฐานจัดซื้อ</label>
-                <input type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="https://ลิงก์รูปหลักฐานจัดซื้อ" />
+                <input type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="https://..." />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -389,11 +409,15 @@ export default function HomeMonitor() {
                   <input type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="฿ ต้นทุน" />
                 </div>
                 <div>
+                  {/* 🌟 ปรับชอยส์ตัวเลือกหมวดหมู่ให้ตรงตระกูลอะไหล่ PC คอมพิวเตอร์ */}
                   <label className="text-slate-400 block mb-1 font-bold">6. ประเภทสินค้า</label>
                   <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm">
-                    <option value="IT / Gaming">IT / Gaming</option>
-                    <option value="โต๊ะคอม / ตกแต่ง">โต๊ะคอม / ตกแต่ง</option>
-                    <option value="ของใช้ในบ้าน">ของใช้ในบ้าน</option>
+                    <option value="CPU">CPU</option>
+                    <option value="GPU">GPU</option>
+                    <option value="Memory">Memory</option>
+                    <option value="Mainboard">Mainboard</option>
+                    <option value="Storage">Storage</option>
+                    <option value="Power Supply / Case">Power Supply / Case</option>
                   </select>
                 </div>
               </div>
