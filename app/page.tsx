@@ -27,6 +27,7 @@ export default function HomeMonitor() {
   // --- ระบบเปิด/ปิด Popup ---
   const [isInputModalOpen, setIsInputModalOpen] = useState(false);
   const [isSellModalOpen, setIsSellModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false); // 📝 เพิ่ม State เปิด/ปิด Popup แก้ไข
 
   // --- ระบบ Filter หมวดหมู่ และ ช่วงวันที่ ---
   const [selectedTab, setSelectedTab] = useState('ทั้งหมด');
@@ -48,6 +49,11 @@ export default function HomeMonitor() {
   const [price, setPrice] = useState(''); 
   const [stock, setStock] = useState('1'); 
   const [category, setCategory] = useState('CPU');
+
+  // 📝 ฟอร์มแก้ไขสินค้า (แก้ไขได้แค่ ชื่อ และ S/N)
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editSerialNumber, setEditSerialNumber] = useState('');
 
   // 📤 ฟอร์มบันทึกการขายออก
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -71,7 +77,6 @@ export default function HomeMonitor() {
 
   useEffect(() => {
     setHasMounted(true);
-    // ถ้ามีการเซ็ตสถานะล็อกอินค้างไว้ให้ดึงข้อมูลเลย
     if (isLoggedIn) {
       fetchProducts();
     }
@@ -93,13 +98,12 @@ export default function HomeMonitor() {
     }
   }, [isSellModalOpen]);
 
-  // ปรับการล็อกอินให้เรียกดึงข้อมูลสินค้าทันทีที่รหัสผ่านถูกต้อง
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (password === 'admin1234') { 
       setIsLoggedIn(true);
       setLoginError('');
-      fetchProducts(); // 🚀 เรียกดึงข้อมูลจาก Database ทันทีที่ล็อกอินผ่าน
+      fetchProducts(); 
     } else {
       setLoginError('❌ รหัสผ่านแอดมินไม่ถูกต้อง!');
     }
@@ -174,6 +178,60 @@ export default function HomeMonitor() {
     }
   };
 
+  // 📝 ฟังก์ชันจัดการเซฟข้อมูลที่แก้ไข (ชื่อ และ S/N)
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+    setLoading(true);
+
+    try {
+      // ดึงข้อมูลวันที่รับเข้าและรูปหลักฐานซื้อเดิมจากสตริงชื่อสินค้าเก่ามาใช้ต่อ
+      const matchReceive = editingProduct.name.match(/รับเข้า: ([\d-]+)/);
+      const matchReceipt = editingProduct.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/);
+      
+      const originalDate = matchReceive ? matchReceive[1] : new Date().toISOString().slice(0, 10);
+      const originalReceipt = matchReceipt ? matchReceipt[1] : 'ไม่มีหลักฐานซื้อ';
+
+      // ประกอบร่างโครงสร้างชื่อสินค้าแบบมี Tag ข้อมูลตามสไตล์เดิมของคุณ
+      const updatedName = `${editName} [รับเข้า: ${originalDate} | หลักฐานซื้อ: ${originalReceipt}]`;
+
+      // 1. สั่งลบข้อมูลตัวเก่าออกก่อนจาก DB
+      await fetch('/api/products', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editingProduct.name }),
+      });
+
+      // 2. แอดข้อมูลเวอร์ชันแก้ไขอัปเดตเข้าไปแทนที่
+      const response = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: updatedName,
+          cost: editingProduct.cost,
+          price: editingProduct.price,
+          stock: editingProduct.stock,
+          serial_number: editSerialNumber,
+          category: editingProduct.category,
+          image_url: editingProduct.image_url
+        }),
+      });
+
+      if (response.ok) {
+        alert('🎉 อัปเดตข้อมูลสินค้าสำเร็จ!');
+        setIsEditModalOpen(false);
+        setEditingProduct(null);
+        fetchProducts();
+      } else {
+        alert('เกิดข้อผิดพลาดในการอัปเดตข้อมูล');
+      }
+    } catch (err: any) {
+      alert("ข้อผิดพลาด: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSellSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProduct) return;
@@ -201,7 +259,7 @@ export default function HomeMonitor() {
       const matchBuyReceipt = selectedProduct.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/);
       const originalBuyReceipt = matchBuyReceipt ? matchBuyReceipt[1] : 'ไม่มีหลักฐานซื้อ';
 
-      const cleanBaseName = selectedProduct.name.split(' [รับเข้า:')[0];
+      const cleanBaseName = selectedProduct.name.split(' [')[0];
       const soldName = `${cleanBaseName} [หลักฐานซื้อ: ${originalBuyReceipt}] [🔴 ขายแล้ว ฿${sPrice} | หัก 3% จากกำไร: ฿${commission.toFixed(2)} | ค่าส่ง: ฿${sFee} | สลิปส่ง: ${slipUrl} | ภาพส่ง: ${packageUrl} | เมื่อ: ${soldAt}]`;
 
       await fetch('/api/products', {
@@ -293,7 +351,6 @@ export default function HomeMonitor() {
     }
   });
 
-  // ป้องกันการแวบหน้าจอระหว่าง Server และ Client ทำงาน
   if (!hasMounted) {
     return <div className="min-h-screen bg-[#0f172a]" />;
   }
@@ -328,7 +385,7 @@ export default function HomeMonitor() {
     );
   }
 
-  // 🖥️ --- บอร์ดมอนิเตอร์หลัก (แสดงหลังล็อกอินสำเร็จเท่านั้น) ---
+  // 🖥 *--- บอร์ดมอนิเตอร์หลัก ---*
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-100 p-4 md:p-8">
       <div className="max-w-7xl mx-auto flex flex-col gap-6">
@@ -345,7 +402,7 @@ export default function HomeMonitor() {
           </div>
         </div>
 
-        {/* 📊 แผงสรุปผลกำไรภาพรวมร้านค้า */}
+        {/* 📊 แผงสรุปผลกำไร */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-[#1e293b] p-5 rounded-2xl border border-slate-800 shadow-lg">
             <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">🛒 ยอดขายสะสมในช่วงนี้</div>
@@ -499,8 +556,13 @@ export default function HomeMonitor() {
                       )}
 
                       <div className="flex gap-2 mt-2 pt-2 border-t border-slate-800/40 justify-end">
+                        {/* ปุ่มควบคุมด้านล่างการ์ดสินค้า */}
                         {!isSold && (
-                          <button onClick={() => { setSelectedProduct(item); setIsSellModalOpen(true); }} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-4 rounded-lg">💰 บันทึกขายออก</button>
+                          <>
+                            {/* 📝 ปุ่มแก้ไขสินค้า (เพิ่มใหม่เฉพาะตัวที่ยังไม่ขาย) */}
+                            <button onClick={() => { setEditingProduct(item); setEditName(cleanName); setEditSerialNumber(item.serial_number); setIsEditModalOpen(true); }} className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold py-1.5 px-3.5 rounded-lg transition-colors">📝 แก้ไข</button>
+                            <button onClick={() => { setSelectedProduct(item); setIsSellModalOpen(true); }} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-4 rounded-lg">💰 บันทึกขายออก</button>
+                          </>
                         )}
                         <button onClick={() => handleDelete(item.name)} className="bg-red-950/20 hover:bg-red-600 text-red-400 text-xs font-bold py-1.5 px-3 rounded-lg">🗑️ ลบ</button>
                       </div>
@@ -570,6 +632,40 @@ export default function HomeMonitor() {
               </div>
               <button type="submit" disabled={loading} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 px-4 rounded-xl mt-2 text-sm">
                 {loading ? '⏳ กำลังยิงไฟล์เข้าระบบ...' : '🚀 บันทึกข้อมูลและรูปภาพเข้าสต็อก'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 📝 POPUP 3: หน้าต่างแก้ไขสินค้า (เพิ่มใหม่ตามคำขอ ล็อกแก้อย่างอื่น) */}
+      {isEditModalOpen && editingProduct && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md relative">
+            <button onClick={() => { setIsEditModalOpen(false); setEditingProduct(null); }} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 w-7 h-7 flex items-center justify-center rounded-full">✕</button>
+            <h2 className="font-bold text-amber-500 text-base border-b border-slate-800 pb-2">📝 แก้ไขรายละเอียดข้อมูลสินค้า</h2>
+            
+            <div className="bg-[#111827] p-3 rounded-xl border border-slate-800 text-[11px] text-slate-400">
+              <p>⚠️ ระบบอนุญาตให้แก้ไขเฉพาะ <span className="text-white font-bold">ชื่อสินค้า</span> และ <span className="text-white font-bold">S/N</span> เท่านั้น ส่วนข้อมูลด้านต้นทุน/ราคา/หมวดหมู่ และรูปภาพจะถูกล็อกคงเดิมเพื่อความปลอดภัยของงบการเงิน</p>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="flex flex-col gap-3 text-xs">
+              <div>
+                <label className="text-slate-400 block mb-1 font-bold">1. แก้ไขชื่อสินค้า</label>
+                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm focus:border-amber-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1 font-bold">2. แก้ไขรหัสซีเรียลนัมเบอร์ (S/N)</label>
+                <input type="text" value={editSerialNumber} onChange={(e) => setEditSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 bg-[#111827]/40 p-2.5 rounded-xl border border-slate-800/60 text-[11px] text-slate-500">
+                <div>📁 หมวดหมู่: <span className="text-slate-300 font-bold">{editingProduct.category}</span></div>
+                <div>💰 ราคาทุนคลัง: <span className="text-slate-300 font-bold">฿{editingProduct.cost.toLocaleString()}</span></div>
+              </div>
+
+              <button type="submit" disabled={loading} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-4 rounded-xl shadow-md mt-1 text-sm transition-colors">
+                {loading ? '⏳ กำลังบันทึกข้อมูลแก้ไขลง Database...' : '✅ ยืนยันและบันทึกการแก้ไข'}
               </button>
             </form>
           </div>
