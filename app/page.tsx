@@ -16,6 +16,9 @@ interface Product {
 }
 
 export default function HomeMonitor() {
+  // --- ตัวแปรเช็คการ Mount ของคอมโพเนนต์ป้องกันปัญหาฝั่ง Client ---
+  const [hasMounted, setHasMounted] = useState(false);
+
   // --- ระบบล็อกอินความปลอดภัยหน้าร้าน ---
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [password, setPassword] = useState('');
@@ -39,7 +42,8 @@ export default function HomeMonitor() {
   const [name, setName] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
   const [receivedAt, setReceivedAt] = useState(''); 
-  const [productFile, setProductFile] = useState<File | null>(null); // 📸 ไฟล์ภาพสินค้าแท้
+  const [productFile, setProductFile] = useState<File | null>(null); 
+  const [receiptFile, setReceiptFile] = useState<File | null>(null); 
   const [cost, setCost] = useState('');
   const [price, setPrice] = useState(''); 
   const [stock, setStock] = useState('1'); 
@@ -49,8 +53,8 @@ export default function HomeMonitor() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [soldPrice, setSoldPrice] = useState('');
   const [shippingFee, setShippingFee] = useState(''); 
-  const [slipFile, setSlipFile] = useState<File | null>(null); // 🧾 ไฟล์ภาพสลิปค่าส่งแท้
-  const [packageFile, setPackageFile] = useState<File | null>(null); // 📦 ไฟล์ภาพถ่ายตอนแพ็กของแท้
+  const [slipFile, setSlipFile] = useState<File | null>(null); 
+  const [packageFile, setPackageFile] = useState<File | null>(null); 
   const [soldAt, setSoldAt] = useState('');
 
   const fetchProducts = async () => {
@@ -66,6 +70,8 @@ export default function HomeMonitor() {
   };
 
   useEffect(() => {
+    setHasMounted(true);
+    // ถ้ามีการเซ็ตสถานะล็อกอินค้างไว้ให้ดึงข้อมูลเลย
     if (isLoggedIn) {
       fetchProducts();
     }
@@ -87,11 +93,13 @@ export default function HomeMonitor() {
     }
   }, [isSellModalOpen]);
 
+  // ปรับการล็อกอินให้เรียกดึงข้อมูลสินค้าทันทีที่รหัสผ่านถูกต้อง
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (password === 'admin1234') { 
       setIsLoggedIn(true);
       setLoginError('');
+      fetchProducts(); // 🚀 เรียกดึงข้อมูลจาก Database ทันทีที่ล็อกอินผ่าน
     } else {
       setLoginError('❌ รหัสผ่านแอดมินไม่ถูกต้อง!');
     }
@@ -117,20 +125,25 @@ export default function HomeMonitor() {
 
   const handleReceiveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    loading || setLoading(true);
+    setLoading(true);
     setMessage('');
     
     try {
-      let finalImageUrl = 'https://picsum.photos/200'; // รูปภาพสำรองกรณีไม่เลือกไฟล์
+      let finalImageUrl = 'https://picsum.photos/200'; 
+      let receiptUrl = 'ไม่มีหลักฐานซื้อ';
       
-      // 📸 ขยับลอจิกยิงภาพสินค้าเข้า Storage ถังใหญ่
       if (productFile) {
         setMessage('⏳ กำลังยิงไฟล์รูปภาพสินค้าเข้า Database...');
         finalImageUrl = await uploadImageToStorage(productFile, 'items');
       }
 
+      if (receiptFile) {
+        setMessage('⏳ กำลังยิงไฟล์รูปหลักฐานการซื้อเข้า Database...');
+        receiptUrl = await uploadImageToStorage(receiptFile, 'receipts');
+      }
+
       const finalCost = parseFloat(cost) || 0;
-      const finalName = `${name} [รับเข้า: ${receivedAt}]`;
+      const finalName = `${name} [รับเข้า: ${receivedAt} | หลักฐานซื้อ: ${receiptUrl}]`;
 
       const response = await fetch('/api/products', {
         method: 'POST',
@@ -142,7 +155,7 @@ export default function HomeMonitor() {
           stock: parseFloat(stock) || 1,
           serial_number: serialNumber || '',
           category: category,
-          image_url: finalImageUrl // เก็บลิงก์ภาพแท้ลง Database เรียบร้อย
+          image_url: finalImageUrl 
         }),
       });
 
@@ -150,7 +163,7 @@ export default function HomeMonitor() {
         setMessage("เกิดข้อผิดพลาดในการบันทึกสต็อก");
       } else {
         setMessage("🎉 บันทึกข้อมูลและจัดเก็บรูปภาพสินค้าสำเร็จ!");
-        setName(''); setSerialNumber(''); setProductFile(null); setCost(''); setPrice('');
+        setName(''); setSerialNumber(''); setProductFile(null); setReceiptFile(null); setCost(''); setPrice('');
         fetchProducts();
         setTimeout(() => { setIsInputModalOpen(false); setMessage(''); }, 1200);
       }
@@ -170,12 +183,10 @@ export default function HomeMonitor() {
       let slipUrl = 'ไม่มีหลักฐาน';
       let packageUrl = 'ไม่มีภาพถ่ายเพิ่มเติม';
 
-      // 🧾 ยิงไฟล์รูปสลิปขนส่งเข้า Storage
       if (slipFile) {
         slipUrl = await uploadImageToStorage(slipFile, 'slips');
       }
 
-      // 📦 ยิงไฟล์รูปแพ็กของเข้า Storage
       if (packageFile) {
         packageUrl = await uploadImageToStorage(packageFile, 'packages');
       }
@@ -187,8 +198,11 @@ export default function HomeMonitor() {
       const baseProfit = sPrice - selectedProduct.cost - packFee - sFee;
       const commission = baseProfit > 0 ? baseProfit * 0.03 : 0;
 
-      // บันทึกที่อยู่รูปภาพแท้ลง Database มัดรวมไปในสตริงข้อมูลดีล
-      const soldName = `${selectedProduct.name} [🔴 ขายแล้ว ฿${sPrice} | หัก 3% จากกำไร: ฿${commission.toFixed(2)} | ค่าส่ง: ฿${sFee} | สลิปส่ง: ${slipUrl} | ภาพส่ง: ${packageUrl} | เมื่อ: ${soldAt}]`;
+      const matchBuyReceipt = selectedProduct.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/);
+      const originalBuyReceipt = matchBuyReceipt ? matchBuyReceipt[1] : 'ไม่มีหลักฐานซื้อ';
+
+      const cleanBaseName = selectedProduct.name.split(' [รับเข้า:')[0];
+      const soldName = `${cleanBaseName} [หลักฐานซื้อ: ${originalBuyReceipt}] [🔴 ขายแล้ว ฿${sPrice} | หัก 3% จากกำไร: ฿${commission.toFixed(2)} | ค่าส่ง: ฿${sFee} | สลิปส่ง: ${slipUrl} | ภาพส่ง: ${packageUrl} | เมื่อ: ${soldAt}]`;
 
       await fetch('/api/products', {
         method: 'DELETE',
@@ -279,7 +293,12 @@ export default function HomeMonitor() {
     }
   });
 
-  // 🔐 --- หน้าต่างความปลอดภัย: หากยังไม่ได้ล็อกอิน ให้กรอกรหัสผ่านก่อน ---
+  // ป้องกันการแวบหน้าจอระหว่าง Server และ Client ทำงาน
+  if (!hasMounted) {
+    return <div className="min-h-screen bg-[#0f172a]" />;
+  }
+
+  // 🔐 --- หน้าต่างความปลอดภัยบังคับล็อกอินก่อนแสดงเนื้อหา ---
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
@@ -289,7 +308,7 @@ export default function HomeMonitor() {
             <p className="text-slate-400 text-xs mt-1">กรุณากรอกรหัสผ่านแอดมินเพื่อเข้าสู่บอร์ดควบคุม</p>
           </div>
           {loginError && (
-            <div className="text-xs text-red-400 bg-red-950/40 border border-red-900 p-2.5 rounded-xl text-center font-bold animate-pulse">
+            <div className="text-xs text-red-400 bg-red-950/40 border border-red-900 p-2.5 rounded-xl text-center font-bold">
               {loginError}
             </div>
           )}
@@ -309,7 +328,7 @@ export default function HomeMonitor() {
     );
   }
 
-  // 🖥️ --- บอร์ดมอนิเตอร์หลัก (แสดงหลังล็อกอินสำเร็จ) ---
+  // 🖥️ --- บอร์ดมอนิเตอร์หลัก (แสดงหลังล็อกอินสำเร็จเท่านั้น) ---
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-100 p-4 md:p-8">
       <div className="max-w-7xl mx-auto flex flex-col gap-6">
@@ -322,7 +341,7 @@ export default function HomeMonitor() {
           </div>
           <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
             <button onClick={() => setIsInputModalOpen(true)} className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-extrabold py-2.5 px-5 rounded-xl shadow-md">📥 ลงทะเบียนรับสินค้า</button>
-            <button onClick={() => { setIsLoggedIn(false); setPassword(''); }} className="bg-slate-800 text-slate-400 border border-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl">🚪 ออก</button>
+            <button onClick={() => { setIsLoggedIn(false); setPassword(''); setProducts([]); }} className="bg-slate-800 text-slate-400 border border-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl">🚪 ออก</button>
           </div>
         </div>
 
@@ -372,6 +391,9 @@ export default function HomeMonitor() {
                 const isSold = item.name.includes('ขายแล้ว');
                 const cost = item.cost || 0;
 
+                const matchBuyReceipt = item.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/);
+                const buyReceiptUrl = matchBuyReceipt ? matchBuyReceipt[1] : '';
+
                 const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
                 const matchComm = item.name.match(/หัก 3% จากกำไร: ฿([\d.]+)/);
                 const matchShip = item.name.match(/ค่าส่ง: ฿([\d.]+)/);
@@ -384,7 +406,7 @@ export default function HomeMonitor() {
                 const proofUrl = matchProof ? matchProof[1] : '';
                 const pkgUrl = matchPkg ? matchPkg[1] : '';
                 const sellDate = matchTime ? matchTime[1] : 'ไม่ระบุ';
-                const cleanName = item.name.split(' [รับเข้า:')[0];
+                const cleanName = item.name.split(' [')[0];
                 
                 const baseProfit = sellPrice - cost - 30 - shipFee;
                 const commission = matchComm ? parseFloat(matchComm[1]) : (baseProfit > 0 ? baseProfit * 0.03 : 0);
@@ -409,9 +431,17 @@ export default function HomeMonitor() {
                     </div>
 
                     <div className="border-t border-slate-800/80 pt-3 flex flex-col gap-2 bg-[#141b2b] -mx-4 -mb-4 p-4 rounded-b-xl text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">💵 ต้นทุนรับเข้าสินค้า (ทุนแท้):</span>
-                        <span className="text-slate-200 font-bold">฿{cost.toLocaleString()}</span>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">💵 ต้นทุนรับเข้าสินค้า (ทุนแท้):</span>
+                          <span className="text-slate-200 font-bold">฿{cost.toLocaleString()}</span>
+                        </div>
+                        {buyReceiptUrl && buyReceiptUrl.startsWith('http') && (
+                          <div className="flex justify-between text-[11px] items-center mt-0.5 border-b border-dashed border-slate-800/60 pb-1.5">
+                            <span className="text-slate-500">🧾 หลักฐานสลิปทุนซื้อ:</span>
+                            <a href={buyReceiptUrl} target="_blank" rel="noreferrer" className="text-orange-400 underline font-semibold hover:text-orange-300">🔗 ดูรูปสลิปตอนซื้อ</a>
+                          </div>
+                        )}
                       </div>
 
                       {isSold ? (
@@ -442,7 +472,6 @@ export default function HomeMonitor() {
                             <span className="text-orange-400 font-black">฿{itemNetProfit.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
                           </div>
 
-                          {/* แสดงรูปสลิปจาก Database */}
                           {proofUrl && proofUrl.startsWith('http') && (
                             <div className="flex justify-between text-[11px] items-center mt-1 pt-1 border-t border-slate-800/40">
                               <span className="text-slate-500">🧾 สลิปส่งของ:</span>
@@ -450,7 +479,6 @@ export default function HomeMonitor() {
                             </div>
                           )}
 
-                          {/* แสดงรูปแพ็กสินค้าเพิ่มเติมจาก Database */}
                           {pkgUrl && pkgUrl.startsWith('http') && (
                             <div className="flex justify-between text-[11px] items-center mt-0.5">
                               <span className="text-slate-500">📸 ภาพถ่ายแพ็กของสินค้า:</span>
@@ -512,14 +540,19 @@ export default function HomeMonitor() {
                 <label className="text-orange-400 block mb-1 font-bold">4. 📸 เลือกอัปโหลดไฟล์รูปภาพสินค้าจริง (ยิงเข้า Database)</label>
                 <input type="file" accept="image/*" onChange={(e) => setProductFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
+
+              <div>
+                <label className="text-orange-400 block mb-1 font-bold">5. 🧾 อัปโหลดรูปสลิปโอนเงิน / ใบเสร็จหลักฐานการซื้อ (ทุนแท้)</label>
+                <input type="file" accept="image/*" onChange={(e) => setReceiptFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
+              </div>
               
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-slate-400 block mb-1 font-bold">5. ราคาทุนที่ได้มา (ทุนแท้เพียวๆ)</label>
+                  <label className="text-slate-400 block mb-1 font-bold">6. ราคาทุนที่ได้มา (ทุนแท้เพียวๆ)</label>
                   <input type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="฿ ต้นทุนราคาสินค้า" />
                 </div>
                 <div>
-                  <label className="text-slate-400 block mb-1 font-bold">6. ประเภทสินค้า</label>
+                  <label className="text-slate-400 block mb-1 font-bold">7. ประเภทสินค้า</label>
                   <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm">
                     <option value="CPU">CPU</option><option value="GPU">GPU</option><option value="Memory">Memory</option><option value="Mainboard">Mainboard</option><option value="Storage">Storage</option><option value="Power Supply / Case">Power Supply / Case</option>
                   </select>
