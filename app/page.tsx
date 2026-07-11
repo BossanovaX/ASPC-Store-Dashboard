@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase'; // เรียกใช้ supabase client ชุดเดิมของคุณ
-import * as XLSX from 'xlsx'; // 🖨️ อิมพอร์ตไลบรารี SheetJS สำหรับทำ Excel
+import { supabase } from '../lib/supabase'; 
+import * as XLSX from 'xlsx'; 
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 
 interface Product {
   id?: string;
@@ -17,6 +19,8 @@ interface Product {
 }
 
 export default function HomeMonitor() {
+  const queryClient = useQueryClient();
+
   // --- ตัวแปรเช็คการ Mount ของคอมโพเนนต์ป้องกันปัญหาฝั่ง Client ---
   const [hasMounted, setHasMounted] = useState(false);
 
@@ -36,12 +40,8 @@ export default function HomeMonitor() {
   const [endDate, setEndDate] = useState('');     
   const [selectedStatus, setSelectedStatus] = useState('ทั้งหมด'); 
 
-  // --- แหล่งเก็บข้อมูล ---
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(false);
+  // --- แหล่งเก็บข้อมูลฟอร์ม ---
   const [message, setMessage] = useState('');
-
-  // 📥 ฟอร์มลงทะเบียนรับของเข้าคลัง
   const [name, setName] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
   const [receivedAt, setReceivedAt] = useState(''); 
@@ -52,12 +52,12 @@ export default function HomeMonitor() {
   const [stock, setStock] = useState('1'); 
   const [category, setCategory] = useState('CPU');
 
-  // 📝 ฟอร์มแก้ไขสินค้า (แก้ไขได้แค่ ชื่อ และ S/N)
+  // ฟอร์มแก้ไขสินค้า
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editName, setEditName] = useState('');
   const [editSerialNumber, setEditSerialNumber] = useState('');
 
-  // 📤 ฟอร์มบันทึกการขายออก
+  // ฟอร์มบันทึกการขายออก
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [soldPrice, setSoldPrice] = useState('');
   const [shippingFee, setShippingFee] = useState(''); 
@@ -65,24 +65,46 @@ export default function HomeMonitor() {
   const [packageFile, setPackageFile] = useState<File | null>(null); 
   const [soldAt, setSoldAt] = useState('');
 
-  const fetchProducts = async () => {
-    try {
+  // ==========================================
+  // 🔥 1. ใช้ TANSTACK QUERY จัดการข้อมูลสินค้า
+  // ==========================================
+  const { 
+    data: products = [], 
+    isLoading: isProductsLoading,
+    isFetching: isProductsFetching
+  } = useQuery<Product[]>({
+    queryKey: ['products'],
+    queryFn: async () => {
       const response = await fetch('/api/products');
-      if (response.ok) {
-        const data = await response.json();
-        setProducts(Array.isArray(data) ? data.reverse() : []);
-      }
-    } catch (err) {
-      console.error(err);
+      if (!response.ok) throw new Error('โหลดข้อมูลคลังสินค้าล้มเหลว');
+      const data = await response.json();
+      return Array.isArray(data) ? data.reverse() : [];
+    },
+    enabled: isLoggedIn,
+    staleTime: 1000 * 60 * 5, 
+  });
+
+  // ==========================================
+  // ⚡ 2. ใช้ MUTATIONS จัดการ CUD และล้าง Cache อัตโนมัติ
+  // ==========================================
+  const productMutation = useMutation({
+    mutationFn: async ({ url, method, body }: { url: string; method: string; body: any }) => {
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) throw new Error('เกิดข้อผิดพลาดในการประมวลผลเซิร์ฟเวอร์');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
     }
-  };
+  });
 
   useEffect(() => {
     setHasMounted(true);
-    if (isLoggedIn) {
-      fetchProducts();
-    }
-  }, [isLoggedIn]);
+  }, []);
 
   useEffect(() => {
     if (isInputModalOpen) {
@@ -102,10 +124,9 @@ export default function HomeMonitor() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === 'admin1234') { 
+    if (password === process.env.NEXT_PUBLIC_ADMIN_PASSWORD) {
       setIsLoggedIn(true);
       setLoginError('');
-      fetchProducts(); 
     } else {
       setLoginError('❌ รหัสผ่านแอดมินไม่ถูกต้อง!');
     }
@@ -130,7 +151,6 @@ export default function HomeMonitor() {
 
   const handleReceiveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setMessage('');
     
     try {
@@ -150,10 +170,12 @@ export default function HomeMonitor() {
       const finalCost = parseFloat(cost) || 0;
       const finalName = `${name} [รับเข้า: ${receivedAt} | หลักฐานซื้อ: ${receiptUrl}]`;
 
-      const response = await fetch('/api/products', {
+      setMessage('⏳ กำลังบันทึกข้อมูลเข้าคลัง...');
+      
+      await productMutation.mutateAsync({
+        url: '/api/products',
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           name: finalName,
           cost: finalCost, 
           price: parseFloat(price) || 0,
@@ -161,28 +183,21 @@ export default function HomeMonitor() {
           serial_number: serialNumber || '',
           category: category,
           image_url: finalImageUrl 
-        }),
+        }
       });
 
-      if (!response.ok) {
-        setMessage("เกิดข้อผิดพลาดในการบันทึกสต็อก");
-      } else {
-        setMessage("🎉 บันทึกข้อมูลและจัดเก็บรูปภาพสินค้าสำเร็จ!");
-        setName(''); setSerialNumber(''); setProductFile(null); setReceiptFile(null); setCost(''); setPrice('');
-        fetchProducts();
-        setTimeout(() => { setIsInputModalOpen(false); setMessage(''); }, 1200);
-      }
+      setMessage("🎉 บันทึกข้อมูลและจัดเก็บรูปภาพสินค้าสำเร็จ!");
+      setName(''); setSerialNumber(''); setProductFile(null); setReceiptFile(null); setCost(''); setPrice('');
+      setTimeout(() => { setIsInputModalOpen(false); setMessage(''); }, 1200);
+      
     } catch (err: any) {
       setMessage("ข้อผิดพลาด: " + err.message);
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct) return;
-    setLoading(true);
 
     try {
       const matchReceive = editingProduct.name.match(/รับเข้า: ([\d-]+)/);
@@ -193,16 +208,16 @@ export default function HomeMonitor() {
 
       const updatedName = `${editName} [รับเข้า: ${originalDate} | หลักฐานซื้อ: ${originalReceipt}]`;
 
-      await fetch('/api/products', {
+      await productMutation.mutateAsync({
+        url: '/api/products',
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: editingProduct.name }),
+        body: { name: editingProduct.name }
       });
 
-      const response = await fetch('/api/products', {
+      await productMutation.mutateAsync({
+        url: '/api/products',
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           name: updatedName,
           cost: editingProduct.cost,
           price: editingProduct.price,
@@ -210,28 +225,20 @@ export default function HomeMonitor() {
           serial_number: editSerialNumber,
           category: editingProduct.category,
           image_url: editingProduct.image_url
-        }),
+        }
       });
 
-      if (response.ok) {
-        alert('🎉 อัปเดตข้อมูลสินค้าสำเร็จ!');
-        setIsEditModalOpen(false);
-        setEditingProduct(null);
-        fetchProducts();
-      } else {
-        alert('เกิดข้อผิดพลาดในการอัปเดตข้อมูล');
-      }
+      alert('🎉 อัปเดตข้อมูลสินค้าสำเร็จ!');
+      setIsEditModalOpen(false);
+      setEditingProduct(null);
     } catch (err: any) {
       alert("ข้อผิดพลาด: " + err.message);
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleSellSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProduct) return;
-    setLoading(true);
 
     try {
       let slipUrl = 'ไม่มีหลักฐาน';
@@ -258,16 +265,16 @@ export default function HomeMonitor() {
       const cleanBaseName = selectedProduct.name.split(' [')[0];
       const soldName = `${cleanBaseName} [หลักฐานซื้อ: ${originalBuyReceipt}] [🔴 ขายแล้ว ฿${sPrice} | หัก 3% จากกำไร: ฿${commission.toFixed(2)} | ค่าส่ง: ฿${sFee} | สลิปส่ง: ${slipUrl} | ภาพส่ง: ${packageUrl} | เมื่อ: ${soldAt}]`;
 
-      await fetch('/api/products', {
+      await productMutation.mutateAsync({
+        url: '/api/products',
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: selectedProduct.name }),
+        body: { name: selectedProduct.name }
       });
 
-      const response = await fetch('/api/products', {
+      await productMutation.mutateAsync({
+        url: '/api/products',
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           name: soldName,
           cost: selectedProduct.cost,
           price: sPrice, 
@@ -275,35 +282,31 @@ export default function HomeMonitor() {
           serial_number: selectedProduct.serial_number,
           category: selectedProduct.category,
           image_url: selectedProduct.image_url
-        }),
+        }
       });
 
-      if (response.ok) {
-        alert('🎉 บันทึกยอดขายและเก็บไฟล์สลิปเข้า Database สำเร็จ!');
-        setSoldPrice('');
-        setShippingFee('');
-        setSlipFile(null);
-        setPackageFile(null);
-        setIsSellModalOpen(false);
-        fetchProducts();
-      }
+      alert('🎉 บันทึกยอดขายและเก็บไฟล์สลิปเข้า Database สำเร็จ!');
+      setSoldPrice('');
+      setShippingFee('');
+      setSlipFile(null);
+      setPackageFile(null);
+      setIsSellModalOpen(false);
     } catch (err: any) {
       alert("เกิดข้อผิดพลาด: " + err.message);
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleDelete = async (productName: string) => {
     if (!confirm(`ต้องการลบรายการคลัง "${productName}" ออกถาวรใช่ไหม?`)) return;
     try {
-      const response = await fetch('/api/products', {
+      await productMutation.mutateAsync({
+        url: '/api/products',
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: productName }),
+        body: { name: productName }
       });
-      if (response.ok) { fetchProducts(); }
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      console.error(err); 
+    }
   };
 
   // --- ระบบคัดกรองข้อมูล ---
@@ -323,7 +326,6 @@ export default function HomeMonitor() {
     return true;
   });
 
-  // --- ฟังก์ชันสำหรับการแปลงข้อมูลออกเป็นไฟล์ Excel ---
   const exportToExcel = () => {
     if (filteredProducts.length === 0) {
       alert('❌ ไม่มีข้อมูลในตารางที่จะ Export ในขณะนี้!');
@@ -377,7 +379,6 @@ export default function HomeMonitor() {
     XLSX.writeFile(workbook, fileName);
   };
 
-  // 📄 --- ฟังก์ชันเรียกใช้หน้าต่างพิมพ์รายงานเป็น PDF ของบราวเซอร์ ---
   const exportToPDF = () => {
     window.print();
   };
@@ -388,10 +389,19 @@ export default function HomeMonitor() {
   let totalProductCostAll = 0; 
   let totalNetProfitAll = 0;   
   let totalStockCostValue = 0; 
-  let totalShippingFeeAll = 0; // ยอดรวมค่าส่งจริงในรายงาน
+  let totalShippingFeeAll = 0; 
 
   const categoryCostMap: Record<string, number> = {
     'CPU': 0, 'GPU': 0, 'Memory': 0, 'Mainboard': 0, 'Storage': 0, 'Power Supply / Case': 0
+  };
+
+  const categoryColors: Record<string, { stroke: string; text: string; bg: string }> = {
+    'CPU': { stroke: '#f97316', text: 'text-orange-500', bg: 'bg-orange-500' },
+    'GPU': { stroke: '#3b82f6', text: 'text-blue-500', bg: 'bg-blue-500' },
+    'Memory': { stroke: '#ec4899', text: 'text-pink-500', bg: 'bg-pink-500' },
+    'Mainboard': { stroke: '#10b981', text: 'text-emerald-500', bg: 'bg-emerald-500' },
+    'Storage': { stroke: '#a855f7', text: 'text-purple-500', bg: 'bg-purple-500' },
+    'Power Supply / Case': { stroke: '#eab308', text: 'text-yellow-500', bg: 'bg-yellow-500' }
   };
 
   products.forEach((item) => {
@@ -405,6 +415,16 @@ export default function HomeMonitor() {
       }
     }
   });
+
+  // --- จัดเตรียมข้อมูลการเงินแยกตามหมวดหมู่ (สำหรับกราฟแท่ง) ---
+  const categoryFinancialMap: Record<string, { sales: number; profit: number }> = {
+    'CPU': { sales: 0, profit: 0 },
+    'GPU': { sales: 0, profit: 0 },
+    'Memory': { sales: 0, profit: 0 },
+    'Mainboard': { sales: 0, profit: 0 },
+    'Storage': { sales: 0, profit: 0 },
+    'PSU / Case': { sales: 0, profit: 0 }
+  };
 
   filteredProducts.forEach((item) => {
     const isSold = item.name.includes('ขายแล้ว');
@@ -428,37 +448,26 @@ export default function HomeMonitor() {
       totalProductCostAll += cost;
       totalNetProfitAll += netProfit;
       totalShippingFeeAll += ship;
+
+      if (categoryFinancialMap[item.category]) {
+        categoryFinancialMap[item.category].sales += sPrice;
+        categoryFinancialMap[item.category].profit += netProfit;
+      }
     }
   });
 
-  const categoryColors: Record<string, { stroke: string; text: string; bg: string }> = {
-    'CPU': { stroke: '#f97316', text: 'text-orange-500', bg: 'bg-orange-500' },
-    'GPU': { stroke: '#3b82f6', text: 'text-blue-500', bg: 'bg-blue-500' },
-    'Memory': { stroke: '#ec4899', text: 'text-pink-500', bg: 'bg-pink-500' },
-    'Mainboard': { stroke: '#10b981', text: 'text-emerald-500', bg: 'bg-emerald-500' },
-    'Storage': { stroke: '#a855f7', text: 'text-purple-500', bg: 'bg-purple-500' },
-    'Power Supply / Case': { stroke: '#eab308', text: 'text-yellow-500', bg: 'bg-yellow-500' }
-  };
+  // แปลงข้อมูลให้ Recharts เอาไปวาดกราฟวงกลมและกราฟแท่ง
+  const donutData = Object.keys(categoryCostMap).map((cat) => ({
+    name: cat,
+    value: categoryCostMap[cat],
+    color: categoryColors[cat]?.stroke || '#64748b'
+  })).filter(item => item.value > 0);
 
-  let accumulatedPercentage = 0;
-  const donutSlices = Object.keys(categoryCostMap).map((cat) => {
-    const costValue = categoryCostMap[cat];
-    const percentage = totalStockCostValue > 0 ? (costValue / totalStockCostValue) * 100 : 0;
-    
-    const radius = 15.91549430918954; 
-    const strokeDasharray = `${percentage} ${100 - percentage}`;
-    const strokeDashoffset = 100 - accumulatedPercentage + 25; 
-    
-    accumulatedPercentage += percentage;
-    return {
-      category: cat,
-      cost: costValue,
-      percent: percentage,
-      dashArray: strokeDasharray,
-      dashOffset: strokeDashoffset,
-      color: categoryColors[cat]?.stroke || '#slate-500'
-    };
-  });
+  const barData = Object.keys(categoryFinancialMap).map((cat) => ({
+    category: cat,
+    'ยอดขาย': categoryFinancialMap[cat].sales,
+    'กำไรสุทธิ': categoryFinancialMap[cat].profit
+  }));
 
   if (!hasMounted) {
     return <div className="min-h-screen bg-[#0f172a]" />;
@@ -493,9 +502,10 @@ export default function HomeMonitor() {
     );
   }
 
+  const globalLoading = isProductsLoading || productMutation.isPending;
+
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-100 p-4 md:p-8">
-      {/* 🛠️ สไตล์ดัก Media Print: บังคับแปลงโฉมเว็บมืดให้กลายเป็นเอกสารรายงานทางการสีขาวคลีนแบบในรูปภาพตัวอย่างทันทีเมื่อกดสั่งพิมพ์ */}
       <style jsx global>{`
         @media print {
           @page { size: A4 landscape; margin: 15mm; }
@@ -512,7 +522,7 @@ export default function HomeMonitor() {
         }
       `}</style>
 
-      {/* 📄 ส่วนหัวรายงานสำหรับพิมพ์ลงกระดาษ PDF เท่านั้น (ซ่อนอยู่บนเว็บปกติ) */}
+      {/* 📄 ส่วนหัวรายงานสำหรับพิมพ์ลงกระดาษ PDF */}
       <div className="hidden print-report-header text-black">
         <h1 className="text-xl font-bold tracking-tight">รายงานประวัติสินค้าและสรุปงบดุลบัญชีการเงิน</h1>
         <p className="text-xs mt-1">ประเภทหมวดหมู่: <span className="font-bold">{selectedTab}</span> | ตัวกรองสถานะ: <span className="font-bold">{selectedStatus}</span></p>
@@ -526,12 +536,15 @@ export default function HomeMonitor() {
         {/* หัวเว็บ */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#1e293b] p-5 rounded-2xl border border-slate-800 shadow-xl no-print">
           <div>
-            <h1 className="text-xl md:text-2xl font-black text-white">🖥️ ERP Monitor & Stock Manager</h1>
-            <p className="text-slate-400 text-xs md:text-sm mt-1">บอร์ดคลังสินค้าอัจฉริยะ (ระบบอัปโหลดไฟล์รูปฝังตรงเข้า Database สำเร็จแล้ว)</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl md:text-2xl font-black text-white">🖥️ ERP Monitor & Stock Manager</h1>
+              {isProductsFetching && <span className="text-xs text-orange-400 animate-pulse bg-orange-950/50 border border-orange-900 px-2 py-0.5 rounded-full">🔄 ซิงค์ข้อมูลอัตโนมัติ...</span>}
+            </div>
+            <p className="text-slate-400 text-xs md:text-sm mt-1">บอร์ดคลังสินค้าอัจฉริยะ (ขับเคลื่อนด้วย TanStack Query & Recharts)</p>
           </div>
           <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
             <button onClick={() => setIsInputModalOpen(true)} className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-extrabold py-2.5 px-5 rounded-xl shadow-md">📥 ลงทะเบียนรับสินค้า</button>
-            <button onClick={() => { setIsLoggedIn(false); setPassword(''); setProducts([]); }} className="bg-slate-800 text-slate-400 border border-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl">🚪 ออก</button>
+            <button onClick={() => { setIsLoggedIn(false); setPassword(''); }} className="bg-slate-800 text-slate-400 border border-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl">🚪 ออก</button>
           </div>
         </div>
 
@@ -555,57 +568,90 @@ export default function HomeMonitor() {
           </div>
         </div>
 
-        {/* 🍩 กราฟ Donut Chart */}
+        {/* 📊 แผง Dashboard อัจฉริยะด้วย Recharts */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 bg-[#1e293b] p-6 rounded-2xl border border-slate-800 shadow-xl items-center no-print">
-          <div className="flex flex-col gap-2 lg:col-span-1">
-            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide">📦 สรุปมูลค่าทรัพย์สินคลังปัจจุบัน</h3>
-            <div className="text-3xl font-black text-white mt-1">฿{totalStockCostValue.toLocaleString(undefined, {maximumFractionDigits: 2})}</div>
-            <p className="text-xs text-slate-500 leading-relaxed mt-1">คำนวณจากราคาทุนเพียว ๆ ของรายการสินค้าทั้งหมดที่ยังสแตนด์บายอยู่ในสถานะสต็อก</p>
+          
+          {/* ฝั่งซ้าย: ข้อมูลตัวเลขสรุปทรัพย์สิน */}
+          <div className="flex flex-col justify-between gap-4 lg:col-span-1 h-full py-1">
+            <div>
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide">📦 สรุปมูลค่าทรัพย์สินคลังปัจจุบัน</h3>
+              <div className="text-3xl font-black text-white mt-1">฿{totalStockCostValue.toLocaleString(undefined, {maximumFractionDigits: 2})}</div>
+              <p className="text-xs text-slate-500 leading-relaxed mt-2">คำนวณจากราคาทุนเพียว ๆ ของรายการสินค้าทั้งหมดที่ยังสแตนด์บายอยู่ในสถานะสต็อกแยกตามประเภท</p>
+            </div>
+            
+            {/* รายการ Badge บอกสัดส่วน (อัปเดตแบบ Grid คลีน ๆ ไม่มี Scrollbar) */}
+<div className="grid grid-cols-1 gap-1.5 text-xs text-slate-400 mt-2">
+  {Object.keys(categoryCostMap).map((cat) => {
+    const costValue = categoryCostMap[cat];
+    const percent = totalStockCostValue > 0 ? (costValue / totalStockCostValue) * 100 : 0;
+    return (
+      <div key={cat} className="flex items-center justify-between bg-[#111827]/40 py-1.5 px-3 rounded-xl border border-slate-900/60 hover:border-slate-800 transition-colors">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: categoryColors[cat]?.stroke }} />
+          <span className="font-bold text-slate-200 truncate text-[11px]">{cat}</span>
+        </div>
+        <div className="text-[11px] font-mono text-slate-400 shrink-0 ml-2">
+          ฿{costValue.toLocaleString()} <span className="text-slate-500 text-[10px]">({percent.toFixed(0)}%)</span>
+        </div>
+      </div>
+    );
+  })}
+</div>
           </div>
           
-          <div className="flex justify-center items-center lg:col-span-1 py-4">
+          {/* ฝั่งกลาง: กราฟวงกลม Donut Chart (รูปแบบเดิมแต่ใช้ Recharts คุม) */}
+          <div className="flex justify-center items-center lg:col-span-1 h-56 relative w-full">
             {totalStockCostValue > 0 ? (
-              <div className="relative w-44 h-44">
-                <svg viewBox="0 0 42 42" className="w-full h-full transform -rotate-90">
-                  <circle cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="#111827" strokeWidth="5" />
-                  {donutSlices.map((slice) => (
-                    slice.percent > 0 && (
-                      <circle
-                        key={slice.category}
-                        cx="21"
-                        cy="21"
-                        r="15.91549430918954"
-                        fill="transparent"
-                        stroke={slice.color}
-                        strokeWidth="5.2"
-                        strokeDasharray={slice.percent + " " + (100 - slice.percent)}
-                        strokeDashoffset={slice.dashOffset}
-                        className="transition-all duration-500 ease-in-out"
-                      />
-                    )
-                  ))}
-                </svg>
-                <div className="absolute inset-0 flex flex-col justify-center items-center text-center">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Asset</span>
-                  <span className="text-xs font-black text-white mt-0.5">100% Stock</span>
-                </div>
-              </div>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={donutData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={3}
+                    dataKey="value"
+                  >
+                    {donutData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    formatter={((value: any, name: any) => [`฿${Number(value).toLocaleString()}`, name]) as any}
+                    contentStyle={{ backgroundColor: '#111827', borderColor: '#334155', borderRadius: '12px', fontSize: '12px', color: '#fff' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
             ) : (
-              <div className="w-44 h-44 rounded-full border-4 border-dashed border-slate-800 flex items-center justify-center text-center text-slate-600 text-xs p-4 font-bold">🛒 คลังสินค้าว่างเปล่า ไม่มีข้อมูลทำกราฟ</div>
+              <div className="w-44 h-44 rounded-full border-4 border-dashed border-slate-800 flex items-center justify-center text-center text-slate-600 text-xs p-4 font-bold">🛒 คลังสินค้าว่างเปล่า</div>
+            )}
+            {totalStockCostValue > 0 && (
+              <div className="absolute inset-0 flex flex-col justify-center items-center text-center pointer-events-none">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">งบประมาณ</span>
+                <span className="text-xs font-black text-white mt-0.5">ปัจจุบัน</span>
+              </div>
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3 lg:col-span-1 text-xs text-slate-400">
-            {donutSlices.map((slice) => (
-              <div key={slice.category} className="flex items-start gap-2 bg-[#111827]/40 p-2 rounded-xl border border-slate-900/60">
-                <span className={`w-3 h-3 rounded-full mt-0.5 shrink-0`} style={{ backgroundColor: slice.color }} />
-                <div className="min-w-0 flex-1">
-                  <div className="font-bold text-slate-200 truncate">{slice.category}</div>
-                  <div className="text-[11px] font-mono mt-0.5 text-slate-400">฿{slice.cost.toLocaleString()} ({slice.percent.toFixed(1)}%)</div>
-                </div>
-              </div>
-            ))}
+          {/* ฝั่งขวา: กราฟแท่งเปรียบเทียบ ยอดขาย VS กำไรสุทธิ */}
+          <div className="h-56 lg:col-span-1 w-full flex flex-col justify-center">
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 text-center lg:text-left">📊 สรุปงบรายรับและกำไรสุทธิแยกตามหมวด</h4>
+            <ResponsiveContainer width="100%" height="85%">
+              <BarChart data={barData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+                <XAxis dataKey="category" tick={{ fill: '#94a3b8', fontSize: 9 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 9 }} axisLine={false} tickLine={false} />
+                <Tooltip 
+                  formatter={(value: any) => [`฿${Number(value).toLocaleString()}`]}
+                  contentStyle={{ backgroundColor: '#111827', borderColor: '#334155', borderRadius: '12px', fontSize: '11px', color: '#fff' }}
+                />
+                <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '5px' }} />
+                <Bar dataKey="ยอดขาย" fill="#10b981" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="กำไรสุทธิ" fill="#f97316" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
+
         </div>
 
         {/* 📅 แผงเครื่องมือควบคุม */}
@@ -613,24 +659,17 @@ export default function HomeMonitor() {
           <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
           <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
           
-          <button 
-            onClick={exportToExcel}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
-          >
+          <button onClick={exportToExcel} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5">
             📊 Export เป็น Excel
           </button>
-
-          <button 
-            onClick={exportToPDF}
-            className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-black py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
-          >
+          <button onClick={exportToPDF} className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-black py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5">
             📄 Print / Save เป็น PDF
           </button>
           
           <div className="text-xs text-slate-400 md:text-right md:col-span-1">กรองพบทั้งหมด <span className="text-orange-400 font-bold text-sm">{filteredProducts.length}</span> ชิ้น</div>
         </div>
 
-        {/* 🔘 แถบตัวกรองสถานะสินค้า */}
+        {/* ตัวกรองสถานะสินค้า */}
         <div className="flex flex-wrap gap-2 bg-[#1e293b] p-3 rounded-xl border border-slate-800 no-print">
           {[
             { id: 'ทั้งหมด', label: '🌐 แสดงทุกสถานะ' },
@@ -640,11 +679,7 @@ export default function HomeMonitor() {
             <button
               key={status.id}
               onClick={() => setSelectedStatus(status.id)}
-              className={`text-xs font-bold py-2 px-4 rounded-lg transition-all ${
-                selectedStatus === status.id 
-                  ? 'bg-emerald-600 text-white shadow-md font-extrabold' 
-                  : 'bg-[#111827] text-slate-400 hover:text-white'
-              }`}
+              className={`text-xs font-bold py-2 px-4 rounded-lg transition-all ${selectedStatus === status.id ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'bg-[#111827] text-slate-400 hover:text-white'}`}
             >
               {status.label}
             </button>
@@ -658,7 +693,7 @@ export default function HomeMonitor() {
           ))}
         </div>
 
-        {/* 📋 --- SECTION ตารางรายงานสไตล์เอกสารแบบฟอร์ม (จะแสดงผลจัดเต็มเมื่อกดพิมพ์ PDF) --- */}
+        {/* 📋 SECTION ตารางสำหรับปริ้น (PDF) */}
         <div className="hidden print-table-container">
           <table>
             <thead>
@@ -667,7 +702,7 @@ export default function HomeMonitor() {
                 <th>รายละเอียดสินค้า</th>
                 <th>Serial Number (S/N)</th>
                 <th>หมวดหมู่</th>
-                <th>สถานะสินค้า</th>
+                <th>สถานะ</th>
                 <th className="text-right-print">ต้นทุนรับเข้า (฿)</th>
                 <th className="text-right-print">ราคาปิดการขาย (฿)</th>
                 <th className="text-right-print">ค่าขนส่งจริง (฿)</th>
@@ -679,7 +714,6 @@ export default function HomeMonitor() {
               {filteredProducts.map((item) => {
                 const isSold = item.name.includes('ขายแล้ว');
                 const cost = item.cost || 0;
-
                 const matchReceive = item.name.match(/รับเข้า: ([\d-]+)/);
                 const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
                 const matchComm = item.name.match(/หัก 3% จากกำไร: ฿([\d.]+)/);
@@ -712,33 +746,33 @@ export default function HomeMonitor() {
                   </tr>
                 );
               })}
-              {/* 🏷️ แถวสรุปยอดเงินรวมท้ายตาราง (TOTAL ROW) แบบเดียวกับแบบฟอร์มบัญชีในรูปภาพ */}
               <tr className="bg-total-row">
                 <td colSpan={5} style={{ textAlign: 'center', fontWeight: 'bold' }}>รวมผลยอดบัญชีทั้งหมด (TOTAL)</td>
                 <td className="text-right-print font-bold">฿{products.reduce((acc, cur) => acc + (!cur.name.includes('ขายแล้ว') ? cur.cost : 0), 0).toLocaleString(undefined, {minimumFractionDigits: 2})} (ในคลัง)</td>
-                <td className="text-right-print font-bold">฿{totalSalesAll.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                <td className="text-right-print font-bold">฿{totalShippingFeeAll.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                <td className="text-right-print font-bold">฿{totalCommissionAll.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                <td className="text-right-print font-bold">฿{totalSalesAll.toLocaleString(undefined, {maximumFractionDigits: 2})}</td>
+                <td className="text-right-print font-bold">฿{totalShippingFeeAll.toLocaleString(undefined, {maximumFractionDigits: 2})}</td>
+                <td className="text-right-print font-bold">฿{totalCommissionAll.toLocaleString(undefined, {maximumFractionDigits: 2})}</td>
                 <td className="text-right-print font-bold" style={{ backgroundColor: '#f0fdf4', color: '#16a34a' }}>
-                  ฿{totalNetProfitAll.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                  ฿{totalNetProfitAll.toLocaleString(undefined, {maximumFractionDigits: 2})}
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        {/* ตู้โชว์การ์ดสินค้า Monitor (จะเปิดใช้งานเฉพาะบนหน้าเว็บปกติ) */}
+        {/* ตู้โชว์การ์ดสินค้า Monitor บนหน้าเว็บ */}
         <div className="bg-[#1e293b] p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col gap-4 no-print">
           <h2 className="font-bold text-slate-300 text-base border-b border-slate-800 pb-3">📦 รายการสต็อกสินค้าและบันทึกประวัติงบการเงิน ({selectedTab} | {selectedStatus})</h2>
 
-          {filteredProducts.length === 0 ? (
+          {globalLoading ? (
+            <div className="text-center py-24 text-slate-400 text-sm animate-pulse">⏳ ระบบกำลังประมวลผลข้อมูล Realtime...</div>
+          ) : filteredProducts.length === 0 ? (
             <div className="text-center py-24 text-slate-500 text-sm">ไม่พบประวัติสินค้าในช่วงนี้</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 overflow-y-auto max-h-[650px] pb-6 pr-1 no-scrollbar">
               {filteredProducts.map((item) => {
                 const isSold = item.name.includes('ขายแล้ว');
                 const cost = item.cost || 0;
-
                 const matchBuyReceipt = item.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/);
                 const buyReceiptUrl = matchBuyReceipt ? matchBuyReceipt[1] : '';
 
@@ -886,17 +920,14 @@ export default function HomeMonitor() {
                 <label className="text-slate-400 block mb-1 font-bold">3. ระบุวันที่รับของ</label>
                 <input type="date" value={receivedAt} onChange={(e) => setReceivedAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
               </div>
-              
               <div>
                 <label className="text-orange-400 block mb-1 font-bold">4. 📸 เลือกอัปโหลดไฟล์รูปภาพสินค้าจริง (ยิงเข้า Database)</label>
                 <input type="file" accept="image/*" onChange={(e) => setProductFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
-
               <div>
                 <label className="text-orange-400 block mb-1 font-bold">5. 🧾 อัปโหลดรูปสลิปโอนเงิน / ใบเสร็จหลักฐานการซื้อ (ทุนแท้)</label>
                 <input type="file" accept="image/*" onChange={(e) => setReceiptFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
-              
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-slate-400 block mb-1 font-bold">6. ราคาทุนที่ได้มา (ทุนแท้เพียวๆ)</label>
@@ -919,8 +950,8 @@ export default function HomeMonitor() {
                   <input type="number" value={stock} onChange={(e) => setStock(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="จำนวนชิ้น" />
                 </div>
               </div>
-              <button type="submit" disabled={loading} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 px-4 rounded-xl mt-2 text-sm">
-                {loading ? '⏳ กำลังยิงไฟล์เข้าระบบ...' : '🚀 บันทึกข้อมูลและรูปภาพเข้าสต็อก'}
+              <button type="submit" disabled={productMutation.isPending} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 px-4 rounded-xl mt-2 text-sm">
+                {productMutation.isPending ? '⏳ กำลังยิงไฟล์เข้าระบบ...' : '🚀 บันทึกข้อมูลและรูปภาพเข้าสต็อก'}
               </button>
             </form>
           </div>
@@ -933,11 +964,9 @@ export default function HomeMonitor() {
           <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md relative">
             <button onClick={() => { setIsEditModalOpen(false); setEditingProduct(null); }} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 w-7 h-7 flex items-center justify-center rounded-full">✕</button>
             <h2 className="font-bold text-amber-500 text-base border-b border-slate-800 pb-2">📝 แก้ไขรายละเอียดข้อมูลสินค้า</h2>
-            
             <div className="bg-[#111827] p-3 rounded-xl border border-slate-800 text-[11px] text-slate-400">
-              <p>⚠️ ระบบอนุญาตให้แก้ไขเฉพาะ <span className="text-white font-bold">ชื่อสินค้า</span> และ <span className="text-white font-bold">S/N</span> เท่านั้น ส่วนข้อมูลด้านต้นทุน/ราคา/หมวดหมู่ และรูปภาพจะถูกล็อกคงเดิมเพื่อความปลอดภัยของงบการเงิน</p>
+              <p>⚠️ ระบบอนุญาตให้แก้ไขเฉพาะ <span className="text-white font-bold">ชื่อสินค้า</span> และ <span className="text-white font-bold">S/N</span> เท่านั้น</p>
             </div>
-
             <form onSubmit={handleEditSubmit} className="flex flex-col gap-3 text-xs">
               <div>
                 <label className="text-slate-400 block mb-1 font-bold">1. แก้ไขชื่อสินค้า</label>
@@ -947,14 +976,12 @@ export default function HomeMonitor() {
                 <label className="text-slate-400 block mb-1 font-bold">2. แก้ไขรหัสซีเรียลนัมเบอร์ (S/N)</label>
                 <input type="text" value={editSerialNumber} onChange={(e) => setEditSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
               </div>
-
               <div className="grid grid-cols-2 gap-3 bg-[#111827]/40 p-2.5 rounded-xl border border-slate-800/60 text-[11px] text-slate-500">
                 <div>📁 หมวดหมู่: <span className="text-slate-300 font-bold">{editingProduct.category}</span></div>
                 <div>💰 ราคาทุนคลัง: <span className="text-slate-300 font-bold">฿{editingProduct.cost.toLocaleString()}</span></div>
               </div>
-
-              <button type="submit" disabled={loading} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-4 rounded-xl shadow-md mt-1 text-sm transition-colors">
-                {loading ? '⏳ กำลังบันทึกข้อมูลแก้ไขลง Database...' : '✅ ยืนยันและบันทึกการแก้ไข'}
+              <button type="submit" disabled={productMutation.isPending} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-4 rounded-xl shadow-md mt-1 text-sm transition-colors">
+                {productMutation.isPending ? '⏳ กำลังบันทึกข้อมูลแก้ไขลง Database...' : '✅ ยืนยันและบันทึกการแก้ไข'}
               </button>
             </form>
           </div>
@@ -967,18 +994,15 @@ export default function HomeMonitor() {
           <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md relative">
             <button onClick={() => setIsSellModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 w-7 h-7 flex items-center justify-center rounded-full">✕</button>
             <h2 className="font-bold text-emerald-400 text-base border-b border-slate-800 pb-2">💰 บันทึกยอดขายและสรุปค่าจัดส่ง</h2>
-            
             <div className="bg-[#111827] p-3 rounded-xl border border-slate-800 text-xs">
               <p className="text-slate-400">สินค้า: <span className="text-white font-bold">{selectedProduct.name.split(' [')[0]}</span></p>
               <p className="text-slate-400 mt-1">ราคาทุนสินค้า: <span className="text-orange-400 font-mono">฿{selectedProduct.cost.toLocaleString()}</span> | ค่าแพ็กเกจบังคับ: <span className="text-slate-300 font-bold">฿30</span></p>
             </div>
-
             <form onSubmit={handleSellSubmit} className="flex flex-col gap-3 text-xs">
               <div>
                 <label className="text-xs font-bold text-slate-400 block mb-1">1. ใส่ราคาขายจริงที่ปิดยอดได้</label>
                 <input type="number" step="0.01" value={soldPrice} onChange={(e) => setSoldPrice(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-base font-bold focus:border-emerald-500 focus:outline-none" placeholder="฿ ยอดขายปิดดีล..." />
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-slate-400 block mb-1">➕ ระบุค่าส่งจริง (ชำระขนส่ง)</label>
@@ -989,17 +1013,16 @@ export default function HomeMonitor() {
                   <input type="date" value={soldAt} onChange={(e) => setSoldAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
                 </div>
               </div>
-
               {soldPrice && (
                 <div className="bg-[#111827] p-3 rounded-xl border border-slate-800 flex flex-col gap-1 text-[11px] text-slate-400">
                   <div className="flex justify-between">
-                    <span>💵 สูตรกำไรเบื้องต้น (ขาย - ทุน - แพ็ก30 - ส่ง):</span>
+                    <span>💵 สูตรกำไรเบื้องต้น:</span>
                     <span className="text-slate-200 font-mono">
                       ฿{(parseFloat(soldPrice) - selectedProduct.cost - 30 - (parseFloat(shippingFee) || 0)).toLocaleString(undefined, {maximumFractionDigits: 2})}
                     </span>
                   </div>
                   <div className="flex justify-between text-amber-400 font-medium">
-                    <span>✂️ ค่านายหน้าหัก 3% คิดจากกำไร:</span>
+                    <span>✂️ ค่านายหน้าหัก 3% จากกำไร:</span>
                     <span className="font-mono">
                       ฿{((parseFloat(soldPrice) - selectedProduct.cost - 30 - (parseFloat(shippingFee) || 0)) > 0 
                         ? (parseFloat(soldPrice) - selectedProduct.cost - 30 - (parseFloat(shippingFee) || 0)) * 0.03 
@@ -1008,19 +1031,16 @@ export default function HomeMonitor() {
                   </div>
                 </div>
               )}
-
               <div>
                 <label className="text-emerald-400 font-bold block mb-1">🧾 อัปโหลดไฟล์ภาพสลิปใบเสร็จค่าขนส่ง</label>
                 <input type="file" accept="image/*" onChange={(e) => setSlipFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
-
               <div>
-                <label className="text-emerald-400 font-bold block mb-1">📸 อัปโหลดไฟล์รูปถ่ายสินค้าตอนแพ็กหรือส่ง (เพิ่มเติม)</label>
+                <label className="text-emerald-400 font-bold block mb-1">📸 อัปโหลดไฟล์รูปถ่ายสินค้าตอนแพ็กหรือส่ง</label>
                 <input type="file" accept="image/*" onChange={(e) => setPackageFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
-
-              <button type="submit" disabled={loading} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl shadow-md mt-1 text-sm">
-                {loading ? '⏳ กำลังอัปโหลดภาพและเซฟงบลง Database...' : '✅ ยืนยันปิดดีลและบันทึกหลักฐานทั้งหมด'}
+              <button type="submit" disabled={productMutation.isPending} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl shadow-md mt-1 text-sm">
+                {productMutation.isPending ? '⏳ กำลังอัปโหลดภาพและเซฟงบลง Database...' : '✅ ยืนยันปิดดีลและบันทึกหลักฐานทั้งหมด'}
               </button>
             </form>
           </div>
