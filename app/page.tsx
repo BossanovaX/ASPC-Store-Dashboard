@@ -35,15 +35,25 @@ export default function HomeMonitor() {
   const [isSellModalOpen, setIsSellModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false); 
 
-  // --- ระบบ Filter หมวดหมู่, ช่วงวันที่ และสถานะสินค้า ---
-  const [selectedTab, setSelectedTab] = useState('ทั้งหมด');
-  const [startDate, setStartDate] = useState(''); 
-  const [endDate, setEndDate] = useState('');     
-  const [selectedStatus, setSelectedStatus] = useState('ทั้งหมด'); 
-
-  // --- ระบบคุมหน้า Pagination (แสดงผลหน้าละ 10 ชิ้น) ---
+  // --- 🟢 1. ระบบควบคุมการกรองฝั่งสินค้าอยู่ในสต็อก (Stock Filters) ---
+  const [stockTab, setStockTab] = useState('ทั้งหมด');
+  const [stockStartDate, setStockStartDate] = useState(''); 
+  const [stockEndDate, setStockEndDate] = useState('');     
+  const [stockSortBy, setStockSortBy] = useState('date-desc');
   const [stockPage, setStockPage] = useState(1);
+
+  // --- 🔴 2. ระบบควบคุมการกรองฝั่งสินค้าจำหน่ายแล้ว (Sold Filters) ---
+  const [soldTab, setSoldTab] = useState('ทั้งหมด');
+  const [soldStartDate, setSoldStartDate] = useState(''); 
+  const [soldEndDate, setSoldEndDate] = useState('');     
+  const [soldSortBy, setSoldSortBy] = useState('date-desc');
   const [soldPage, setSoldPage] = useState(1);
+
+  // --- 📄 3. 🔥 ระบบตัวกรองศูนย์ออกเอกสารและรายงานบัญชี (Report Panel Filters) ---
+  const [docStatus, setDocStatus] = useState('ทั้งหมด'); 
+  const [docCategory, setDocCategory] = useState('ทั้งหมด');
+  const [docStartDate, setDocStartDate] = useState('');
+  const [docEndDate, setDocEndDate] = useState('');
 
   // --- แหล่งเก็บข้อมูลฟอร์ม ---
   const [message, setMessage] = useState('');
@@ -123,11 +133,9 @@ export default function HomeMonitor() {
     setHasMounted(true);
   }, []);
 
-  // รีเซ็ตหน้า Pagination ทุกครั้งที่เปลี่ยนตัวกรองหลัก
-  useEffect(() => {
-    setStockPage(1);
-    setSoldPage(1);
-  }, [selectedTab, selectedStatus, startDate, endDate]);
+  // รีเซ็ตหน้า Pagination เมื่อตัวกรองของฝั่งตัวเองเปลี่ยน
+  useEffect(() => { setStockPage(1); }, [stockTab, stockStartDate, stockEndDate, stockSortBy]);
+  useEffect(() => { setSoldPage(1); }, [soldTab, soldStartDate, soldEndDate, soldSortBy]);
 
   useEffect(() => {
     if (isInputModalOpen) {
@@ -230,10 +238,10 @@ export default function HomeMonitor() {
       let finalProductImageUrl = editingProduct.image_url;
       let finalBuyReceiptUrl = matchReceipt ? matchReceipt[1] : 'ไม่มีหลักฐานซื้อ';
 
-      if (editProductFile) {
+      if (!isSold && editProductFile) {
         finalProductImageUrl = await uploadImageToStorage(editProductFile, 'items');
       }
-      if (editReceiptFile) {
+      if (!isSold && editReceiptFile) {
         finalBuyReceiptUrl = await uploadImageToStorage(editReceiptFile, 'receipts');
       }
 
@@ -379,30 +387,94 @@ export default function HomeMonitor() {
     }
   };
 
-  // --- ระบบคัดกรองข้อมูล ---
-  const filteredProducts = products.filter((item) => {
-    if (selectedTab !== 'ทั้งหมด' && item.category !== selectedTab) return false;
-
+  // --- 🟢 ระบบคัดกรอง + จัดเรียงของฝั่งสินค้าในคลัง (Stock Compute) ---
+  const stockFilteredProducts = products.filter((item) => {
     const isSold = item.name.includes('ขายแล้ว');
-    if (selectedStatus === 'อยู่ในสต็อก' && isSold) return false;
-    if (selectedStatus === 'จำหน่ายแล้ว' && !isSold) return false;
+    if (isSold) return false; 
+    if (stockTab !== 'ทั้งหมด' && item.category !== stockTab) return false;
+
+    const matchReceive = item.name.match(/รับเข้า: ([\d-]+)/);
+    const itemDate = matchReceive ? matchReceive[1] : '';
+    if (stockStartDate && itemDate && itemDate < stockStartDate) return false;
+    if (stockEndDate && itemDate && itemDate > stockEndDate) return false;
+
+    return true;
+  }).sort((a, b) => {
+    const cleanNameA = a.name.split(' [')[0];
+    const cleanNameB = b.name.split(' [')[0];
+    const dateA = a.name.match(/รับเข้า: ([\d-]+)/)?.[1] || '';
+    const dateB = b.name.match(/รับเข้า: ([\d-]+)/)?.[1] || '';
+
+    if (stockSortBy === 'name-asc') return cleanNameA.localeCompare(cleanNameB, 'th');
+    if (stockSortBy === 'name-desc') return cleanNameB.localeCompare(cleanNameA, 'th');
+    if (stockSortBy === 'date-asc') return dateA.localeCompare(dateB);
+    if (stockSortBy === 'date-desc') return dateB.localeCompare(dateA);
+    if (stockSortBy === 'price-desc') return b.price - a.price;
+    if (stockSortBy === 'price-asc') return a.price - b.price;
+    if (stockSortBy === 'cost-desc') return b.cost - a.cost;
+    if (stockSortBy === 'cost-asc') return a.cost - b.cost;
+    return 0;
+  });
+
+  // --- 🔴 ระบบคัดกรอง + จัดเรียงของฝั่งสินค้าขายออกแล้ว (Sold Compute) ---
+  const soldFilteredProducts = products.filter((item) => {
+    const isSold = item.name.includes('ขายแล้ว');
+    if (!isSold) return false; 
+    if (soldTab !== 'ทั้งหมด' && item.category !== soldTab) return false;
+
+    const matchSell = item.name.match(/เมื่อ: ([\d-]+)/);
+    const itemDate = matchSell ? matchSell[1] : '';
+    if (soldStartDate && itemDate && itemDate < soldStartDate) return false;
+    if (soldEndDate && itemDate && itemDate > soldEndDate) return false;
+
+    return true;
+  }).sort((a, b) => {
+    const cleanNameA = a.name.split(' [')[0];
+    const cleanNameB = b.name.split(' [')[0];
+    const dateA = a.name.match(/เมื่อ: ([\d-]+)/)?.[1] || '';
+    const dateB = b.name.match(/เมื่อ: ([\d-]+)/)?.[1] || '';
+
+    const priceA = parseFloat(a.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0');
+    const priceB = parseFloat(b.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0');
+
+    if (soldSortBy === 'name-asc') return cleanNameA.localeCompare(cleanNameB, 'th');
+    if (soldSortBy === 'name-desc') return cleanNameB.localeCompare(cleanNameA, 'th');
+    if (soldSortBy === 'date-asc') return dateA.localeCompare(dateB);
+    if (soldSortBy === 'date-desc') return dateB.localeCompare(dateA);
+    if (soldSortBy === 'price-desc') return priceB - priceA;
+    if (soldSortBy === 'price-asc') return priceA - priceB;
+    if (soldSortBy === 'cost-desc') return b.cost - a.cost;
+    if (soldSortBy === 'cost-asc') return a.cost - b.cost;
+    return 0;
+  });
+
+  // --- 📄 3. 🔥 ชุดคำนวณกรองข้อมูลเฉพาะกิจสำหรับออกเอกสาร (Report Center Compute) ---
+  const reportFilteredProducts = products.filter((item) => {
+    const isSold = item.name.includes('ขายแล้ว');
+    
+    if (docStatus === 'อยู่ในสต็อก' && isSold) return false;
+    if (docStatus === 'จำหน่ายแล้ว' && !isSold) return false;
+
+    if (docCategory !== 'ทั้งหมด' && item.category !== docCategory) return false;
 
     const matchReceive = item.name.match(/รับเข้า: ([\d-]+)/);
     const matchSell = item.name.match(/เมื่อ: ([\d-]+)/);
-    const itemDate = matchSell ? matchSell[1] : (matchReceive ? matchReceive[1] : '');
-    if (startDate && itemDate && itemDate < startDate) return false;
-    if (endDate && itemDate && itemDate > endDate) return false;
+    const itemDate = isSold ? (matchSell ? matchSell[1] : '') : (matchReceive ? matchReceive[1] : '');
+
+    if (docStartDate && itemDate && itemDate < docStartDate) return false;
+    if (docEndDate && itemDate && itemDate > docEndDate) return false;
 
     return true;
   });
 
-  const exportToExcel = () => {
-    if (filteredProducts.length === 0) {
-      alert('❌ ไม่มีข้อมูลในตารางที่จะ Export ในขณะนี้!');
+  // --- 🔥 ฟังก์ชันดาวน์โหลด Excel ที่ดึงสไตล์คัดกรองจากศูนย์ออกรายงานโดยตรง ---
+  const exportToExcelFromPanel = () => {
+    if (reportFilteredProducts.length === 0) {
+      alert('❌ ไม่พบข้อมูลตามเงื่อนไขที่คุณเลือกจัดรายงานในระบบ!');
       return;
     }
 
-    const reportData = filteredProducts.map((item, index) => {
+    const reportData = reportFilteredProducts.map((item, index) => {
       const isSold = item.name.includes('ขายแล้ว');
       const cleanName = item.name.split(' [')[0];
       
@@ -445,28 +517,23 @@ export default function HomeMonitor() {
 
     const worksheet = XLSX.utils.json_to_sheet(reportData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'ERP_Financial_Report');
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'ERP_Custom_Report');
 
-    const fileName = `ERP_Report_${selectedTab}_${selectedStatus}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const fileName = `ERP_Custom_Report_${docStatus}_${docCategory}_${new Date().toISOString().slice(0, 10)}.xlsx`;
     XLSX.writeFile(workbook, fileName);
   };
 
-  const exportToPDF = () => {
-    window.print();
-  };
+  const exportToPDF = () => { window.print(); };
 
-  // --- แผงคำนวณงบภาพรวมหน้าร้าน ---
-  let totalSalesAll = 0;
-  let totalCommissionAll = 0;
-  let totalProductCostAll = 0; 
-  let totalNetProfitAll = 0;   
-  let totalStockCostValue = 0; 
-  let totalShippingFeeAll = 0; 
+  // --- แผงคำนวณงบภาพรวมหน้าร้าน (คำนวณจากทุกสินค้าในระบบ) ---
+  let totalSalesAll = 0; let totalCommissionAll = 0; let totalProductCostAll = 0; 
+  let totalNetProfitAll = 0; let totalStockCostValue = 0; let totalShippingFeeAll = 0; 
 
   const categoryCostMap: Record<string, number> = {
     'CPU': 0, 'GPU': 0, 'Memory': 0, 'Mainboard': 0, 'Storage': 0, 'Power Supply': 0, 'Case': 0, 'Cooler': 0
   };
 
+  // 🔥 ฟิกซ์เพิ่มตัวแปรที่หลุดหายไปชุดที่ 1 ของระบบกราฟ
   const categoryColors: Record<string, { stroke: string; text: string; bg: string }> = {
     'CPU': { stroke: '#f97316', text: 'text-orange-500', bg: 'bg-orange-500' },
     'GPU': { stroke: '#3b82f6', text: 'text-blue-500', bg: 'bg-blue-500' },
@@ -478,109 +545,65 @@ export default function HomeMonitor() {
     'Cooler': { stroke: '#06b6d4', text: 'text-cyan-500', bg: 'bg-cyan-500' }
   };
 
+  // 🔥 ฟิกซ์เพิ่มตัวแปรที่หลุดหายไปชุดที่ 2 ของระบบจัดเรียงแท่งกราฟ Financial
+  const categoryFinancialMap: Record<string, { sales: number; profit: number }> = {
+    'CPU': { sales: 0, profit: 0 }, 'GPU': { sales: 0, profit: 0 }, 'Memory': { sales: 0, profit: 0 },
+    'Mainboard': { sales: 0, profit: 0 }, 'Storage': { sales: 0, profit: 0 }, 'Power Supply': { sales: 0, profit: 0 },
+    'Case': { sales: 0, profit: 0 }, 'Cooler': { sales: 0, profit: 0 }
+  };
+
   products.forEach((item) => {
     const isSold = item.name.includes('ขายแล้ว');
     const cost = item.cost || 0;
 
     if (!isSold) {
       totalStockCostValue += cost;
-      if (categoryCostMap[item.category] !== undefined) {
-        categoryCostMap[item.category] += cost;
-      }
-    }
-  });
-
-  const categoryFinancialMap: Record<string, { sales: number; profit: number }> = {
-    'CPU': { sales: 0, profit: 0 },
-    'GPU': { sales: 0, profit: 0 },
-    'Memory': { sales: 0, profit: 0 },
-    'Mainboard': { sales: 0, profit: 0 },
-    'Storage': { sales: 0, profit: 0 },
-    'Power Supply': { sales: 0, profit: 0 },
-    'Case': { sales: 0, profit: 0 },
-    'Cooler': { sales: 0, profit: 0 }
-  };
-
-  filteredProducts.forEach((item) => {
-    const isSold = item.name.includes('ขายแล้ว');
-    const cost = item.cost || 0;
-    
-    if (isSold) {
-      const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
-      const matchComm = item.name.match(/หัก 3% จากกำไร: ฿([\d.]+)/);
-      const matchShip = item.name.match(/ค่าส่ง: ฿([\d.]+)/); 
+      if (categoryCostMap[item.category] !== undefined) categoryCostMap[item.category] += cost;
+    } else {
+      const sPrice = parseFloat(item.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0');
+      const ship = parseFloat(item.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0');
+      const comm = parseFloat(item.name.match(/หัก 3% จากกำไร: ฿([\d.]+)/)?.[1] || '0');
       
-      const sPrice = matchPrice ? parseFloat(matchPrice[1]) : item.price;
-      const ship = matchShip ? parseFloat(matchShip[1]) : 0;
-      const packFee = 30; 
-
-      const baseProfit = sPrice - cost - packFee - ship;
-      const comm = matchComm ? parseFloat(matchComm[1]) : (baseProfit > 0 ? baseProfit * 0.03 : 0);
-      const netProfit = baseProfit - comm;
-
       totalSalesAll += sPrice;
       totalCommissionAll += comm;
       totalProductCostAll += cost;
-      totalNetProfitAll += netProfit;
       totalShippingFeeAll += ship;
+      totalNetProfitAll += (sPrice - cost - 30 - ship - comm);
 
       if (categoryFinancialMap[item.category]) {
         categoryFinancialMap[item.category].sales += sPrice;
-        categoryFinancialMap[item.category].profit += netProfit;
+        categoryFinancialMap[item.category].profit += (sPrice - cost - 30 - ship - comm);
       }
     }
   });
 
   const donutData = Object.keys(categoryCostMap).map((cat) => ({
-    name: cat,
-    value: categoryCostMap[cat],
-    color: categoryColors[cat]?.stroke || '#64748b'
+    name: cat, value: categoryCostMap[cat], color: categoryColors[cat]?.stroke || '#64748b'
   })).filter(item => item.value > 0);
 
   const barData = Object.keys(categoryFinancialMap).map((cat) => ({
-    category: cat,
-    'ยอดขาย': categoryFinancialMap[cat].sales,
-    'กำไรสุทธิ': categoryFinancialMap[cat].profit
+    category: cat, 'ยอดขาย': categoryFinancialMap[cat].sales, 'กำไรสุทธิ': categoryFinancialMap[cat].profit
   }));
 
-  if (!hasMounted) {
-    return <div className="min-h-screen bg-[#0f172a]" />;
-  }
+  if (!hasMounted) return <div className="min-h-screen bg-[#0f172a]" />;
 
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
         <form onSubmit={handleLogin} className="bg-[#1e293b] p-6 rounded-2xl border border-slate-800 shadow-2xl w-full max-w-sm flex flex-col gap-4">
           <div className="text-center">
-            <h2 className="text-xl font-black text-white">🔐 ERP Login</h2>
+            <h2 className="text-xl font-black text-white">🔐 ASPC Login</h2>
             <p className="text-slate-400 text-xs mt-1">กรุณากรอกรหัสผ่านแอดมินเพื่อเข้าสู่บอร์ดควบคุม</p>
           </div>
-          {loginError && (
-            <div className="text-xs text-red-400 bg-red-950/40 border border-red-900 p-2.5 rounded-xl text-center font-bold">
-              {loginError}
-            </div>
-          )}
-          <input 
-            type="password" 
-            value={password} 
-            onChange={(e) => setPassword(e.target.value)} 
-            placeholder="รหัสผ่านแอดมิน..." 
-            className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm text-center focus:border-orange-500 focus:outline-none font-mono"
-            required 
-          />
-          <button type="submit" className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-md">
-            🔓 เข้าสู่ระบบ
-          </button>
+          {loginError && <div className="text-xs text-red-400 bg-red-950/40 border border-red-900 p-2.5 rounded-xl text-center font-bold">{loginError}</div>}
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="รหัสผ่านแอดมิน..." className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm text-center focus:border-orange-500 focus:outline-none font-mono" required />
+          <button type="submit" className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-md">🔓 เข้าสู่ระบบ</button>
         </form>
       </div>
     );
   }
 
   const globalLoading = isProductsLoading || productMutation.isPending;
-
-  function setEditThemeFile(arg0: File | null): void {
-    throw new Error('Function not implemented.');
-  }
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-100 p-4 md:p-8">
@@ -603,25 +626,25 @@ export default function HomeMonitor() {
         }
       `}</style>
 
-      {/* ส่วนหัวรายงาน PDF */}
+      {/* 🔥 ส่วนหัวรายงานใบสั่งปริ้น PDF */}
       <div className="hidden print-report-header text-black">
-        <h1 className="text-xl font-bold tracking-tight">รายงานประวัติสินค้าและสรุปงบดุลบัญชีการเงิน</h1>
-        <p className="text-xs mt-1">ประเภทหมวดหมู่: <span className="font-bold">{selectedTab}</span> | ตัวกรองสถานะ: <span className="font-bold">{selectedStatus}</span></p>
-        <p className="text-[11px] text-gray-600 mt-1">
-          ช่วงวันที่: {startDate ? startDate : 'เริ่มต้นระบบ'} ถึง {endDate ? endDate : new Date().toISOString().slice(0, 10)}
+        <h1 className="text-xl font-bold tracking-tight">รายงานประวัติสินค้าและสรุปงบดุลบัญชีการเงิน (คัดกรองพิเศษ)</h1>
+        <p className="text-xs mt-1">สถานะเป้าหมาย: <span className="font-bold">{docStatus}</span> | ประเภทหมวดหมู่: <span className="font-bold">{docCategory}</span></p>
+        <p className="text-[11px] text-gray-600 mt-0.5">
+          ช่วงขอบเขตวันที่: {docStartDate ? docStartDate : 'ตั้งแต่เริ่มบันทึกระบบ'} ถึง {docEndDate ? docEndDate : 'ปัจจุบัน'}
         </p>
       </div>
 
       <div className="max-w-7xl mx-auto flex flex-col gap-6">
         
-        {/* หัวเว็บ */}
+        {/* หัวเว็บหลักหน้าโฮม */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#1e293b] p-5 rounded-2xl border border-slate-800 shadow-xl no-print">
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl md:text-2xl font-black text-white">🖥️ ERP Monitor & Stock Manager</h1>
               {isProductsFetching && <span className="text-xs text-orange-400 animate-pulse bg-orange-950/50 border border-orange-900 px-2 py-0.5 rounded-full">🔄 ซิงค์ข้อมูลอัตโนมัติ...</span>}
             </div>
-            <p className="text-slate-400 text-xs md:text-sm mt-1">บอร์ดคลังสินค้าอัจฉริยะ (ขับเคลื่อนด้วย TanStack Query & Recharts)</p>
+            <p className="text-slate-400 text-xs md:text-sm mt-1">บอร์ดคลังสินค้าอัจฉริยะ ( Made by isr.lhvl )</p>
           </div>
           <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
             <button onClick={() => setIsInputModalOpen(true)} className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-extrabold py-2.5 px-5 rounded-xl shadow-md">📥 ลงทะเบียนรับสินค้า</button>
@@ -629,7 +652,7 @@ export default function HomeMonitor() {
           </div>
         </div>
 
-        {/* 📊 แผงสรุปผลกำไร */}
+        {/* 📊 แผงสรุปผลกำไรสะสมต้นทาง */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 no-print">
           <div className="bg-[#1e293b] p-5 rounded-2xl border border-slate-800 shadow-lg">
             <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">🛒 ยอดขายสะสมในช่วงนี้</div>
@@ -712,35 +735,72 @@ export default function HomeMonitor() {
           </div>
         </div>
 
-        {/* 📅 เครื่องมือควบคุม */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 bg-[#1e293b] p-4 rounded-xl border border-slate-800 items-center no-print">
-          <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
-          <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
-          <button onClick={exportToExcel} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5">📊 Export เป็น Excel</button>
-          <button onClick={exportToPDF} className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-black py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5">📄 Print / Save เป็น PDF</button>
-          <div className="text-xs text-slate-400 md:text-right md:col-span-1">กรองพบทั้งหมด <span className="text-orange-400 font-bold text-sm">{filteredProducts.length}</span> ชิ้น</div>
+        {/* =========================================================
+         * 📄 ศูนย์ออกเอกสารและรายงานบัญชีแยกหัวข้อเฉพาะ (Document & Report Center)
+         * ========================================================= */}
+        <div className="bg-[#1e293b] p-5 rounded-2xl shadow-xl border border-slate-800 flex flex-col gap-4 no-print">
+          <div className="flex items-center gap-2 border-b border-slate-800 pb-2.5">
+            <span className="text-base">📄</span>
+            <h3 className="font-bold text-slate-200 text-sm">ศูนย์ออกเอกสารและรายงานงบบัญชีร้าน</h3>
+            <p className="text-[11px] text-slate-500 ml-2">ตั้งค่าสไตล์เงื่อนไขคัดกรองก่อนสั่งพิมพ์ออกใบรายงานจริง</p>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+            <div>
+              <label className="text-[11px] text-slate-400 block mb-1 font-bold">1. เลือกสถานะสินค้าในรายงาน</label>
+              <select value={docStatus} onChange={(e) => setDocStatus(e.target.value)} className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-slate-200 text-xs focus:outline-none">
+                <option value="ทั้งหมด">🌐 รวมข้อมูลทุกอย่างในระบบ</option>
+                <option value="อยู่ในสต็อก">🟢 เฉพาะสินค้าอยู่ในสต็อก (คลังสินค้าปัจจุบัน)</option>
+                <option value="จำหน่ายแล้ว">🔴 เฉพาะสินค้าปิดดีลจำหน่ายแล้ว (ขาออกบัญชี)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[11px] text-slate-400 block mb-1 font-bold">2. เลือกพิมพ์แยกหมวดหมู่</label>
+              <select value={docCategory} onChange={(e) => setDocCategory(e.target.value)} className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-slate-200 text-xs focus:outline-none">
+                {['ทั้งหมด', 'CPU', 'GPU', 'Memory', 'Mainboard', 'Storage', 'Power Supply', 'Case', 'Cooler'].map(cat => (
+                  <option key={`doc-cat-opt-${cat}`} value={cat}>{cat === 'ทั้งหมด' ? '🌐 พิมพ์รวมทุกหมวดชิ้นส่วน' : cat}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[11px] text-slate-400 block mb-1 font-bold">3. ขอบเขตวันที่เริ่มต้น</label>
+              <input type="date" value={docStartDate} onChange={(e) => setDocStartDate(e.target.value)} className="w-full bg-[#111827] border border-slate-700 rounded-xl py-1.5 px-3 text-slate-200 text-xs font-mono" />
+            </div>
+
+            <div>
+              <label className="text-[11px] text-slate-400 block mb-1 font-bold">4. ขอบเขตวันที่สิ้นสุด</label>
+              <input type="date" value={docEndDate} onChange={(e) => setDocEndDate(e.target.value)} className="w-full bg-[#111827] border border-slate-700 rounded-xl py-1.5 px-3 text-slate-200 text-xs font-mono" />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap sm:flex-nowrap gap-3 pt-2 mt-1 border-t border-slate-800/60 justify-between items-center">
+            <p className="text-[11px] text-slate-400">
+              สถานะตัวกรองรายงานปัจจุบัน คัดเลือกพบเอกสารทั้งหมด <span className="text-orange-400 font-bold font-mono text-sm">{reportFilteredProducts.length}</span> แถวบัญชี
+            </p>
+            <div className="flex gap-2 self-stretch sm:self-auto justify-end">
+              <button onClick={exportToExcelFromPanel} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black py-2.5 px-5 rounded-xl shadow-md transition-all">
+                📊 สั่งดึงไฟล์ Excel (.xlsx)
+              </button>
+              <button onClick={exportToPDF} className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-black py-2.5 px-5 rounded-xl shadow-md transition-all">
+                📄 สั่งพิมพ์รายงาน PDF / PRINT
+              </button>
+            </div>
+          </div>
         </div>
 
-        
-
-        {/* แถบตัวกรองหมวดหมู่สินค้า 🔄 โครงสร้าง 8 ตัวเลือกใหม่ */}
-        <div className="flex flex-wrap gap-2 bg-[#1e293b] p-3 rounded-xl border border-slate-800 no-print">
-          {['ทั้งหมด', 'CPU', 'GPU', 'Memory', 'Mainboard', 'Storage', 'Power Supply', 'Case', 'Cooler'].map((tab) => (
-            <button key={tab} onClick={() => setSelectedTab(tab)} className={`text-xs font-bold py-2 px-4 rounded-lg transition-all ${selectedTab === tab ? 'bg-orange-600 text-white shadow-md' : 'bg-[#111827] text-slate-400 hover:text-white'}`}>{tab === 'ทั้งหมด' ? '🌐 รวมทุกชนิด' : tab}</button>
-          ))}
-        </div>
-
-        {/* 📋 SECTION ตารางสำหรับปริ้น (PDF) */}
+        {/* 📋 SECTION ตารางสำหรับปริ้น (PDF หลังบ้านจะซิงค์ดึงข้อมูลจาก reportFilteredProducts มาพ่นออกตรงนี้) */}
         <div className="hidden print-table-container">
           <table>
             <thead>
               <tr>
-                <th>วันที่ทำรายการ</th><th>รายละเอียดสินค้า</th><th>Serial Number (S/N)</th><th>หมวดหมู่</th><th>สถานะ</th>
-                <th className="text-right-print">ต้นทุนรับเข้า (฿)</th><th className="text-right-print">ราคาปิดการขาย (฿)</th><th className="text-right-print">ค่าขนส่งจริง (฿)</th><th className="text-right-print">นายหน้า 3% (฿)</th><th className="text-right-print">กำไรสุทธิ (฿)</th>
+                <th>วันที่</th><th>รายละเอียดชิ้นส่วนสินค้า</th><th>Serial Number (S/N)</th><th>หมวด</th><th>สถานะ</th>
+                <th className="text-right-print">ทุนรับเข้า (฿)</th><th className="text-right-print">ราคาขายจริง (฿)</th><th className="text-right-print">ค่าส่งจริง (฿)</th><th className="text-right-print">นายหน้า 3% (฿)</th><th className="text-right-print">กำไรสุทธิ (฿)</th>
               </tr>
             </thead>
             <tbody>
-              {filteredProducts.map((item) => {
+              {reportFilteredProducts.map((item, idx) => {
                 const isSold = item.name.includes('ขายแล้ว');
                 const cost = item.cost || 0;
                 const matchReceive = item.name.match(/รับเข้า: ([\d-]+)/);
@@ -759,63 +819,94 @@ export default function HomeMonitor() {
                 const itemNetProfit = baseProfit - commission;
 
                 return (
-                  <tr key={item.name}>
+                  <tr key={`print-report-row-${item.name}-${idx}`}>
                     <td>{displayDate}</td><td>{cleanName}</td><td className="font-mono">{item.serial_number || '-'}</td><td>{item.category}</td><td>{isSold ? 'ขายแล้ว' : 'ในสต็อก'}</td>
                     <td className="text-right-print">฿{cost.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td className="text-right-print">{isSold ? `฿${sellPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '-'}</td>
                     <td className="text-right-print">{isSold ? `฿${shipFee.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '-'}</td>
                     <td className="text-right-print">{isSold ? `฿${commission.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '-'}</td>
-                    <td className="text-right-print" style={{ color: isSold && itemNetProfit > 0 ? '#10b981' : '#000' }}>{isSold ? `฿${itemNetProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '-'}</td>
+                    <td className="text-right-print" style={{ color: isSold && itemNetProfit > 0 ? '#16a34a' : '#000' }}>{isSold ? `฿${itemNetProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '-'}</td>
                   </tr>
                 );
               })}
               <tr className="bg-total-row">
-                <td colSpan={5} style={{ textAlign: 'center', fontWeight: 'bold' }}>รวมผลยอดบัญชีทั้งหมด (TOTAL)</td>
-                <td className="text-right-print font-bold">฿{products.reduce((acc, cur) => acc + (!cur.name.includes('ขายแล้ว') ? cur.cost : 0), 0).toLocaleString(undefined, {minimumFractionDigits: 2})} (ในคลัง)</td>
-                <td className="text-right-print font-bold">฿{totalSalesAll.toLocaleString(undefined, {maximumFractionDigits: 2})}</td>
-                <td className="text-right-print font-bold">฿{totalShippingFeeAll.toLocaleString(undefined, {maximumFractionDigits: 2})}</td>
-                <td className="text-right-print font-bold">฿{totalCommissionAll.toLocaleString(undefined, {maximumFractionDigits: 2})}</td>
-                <td className="text-right-print font-bold" style={{ backgroundColor: '#f0fdf4', color: '#16a34a' }}>฿{totalNetProfitAll.toLocaleString(undefined, {maximumFractionDigits: 2})}</td>
+                <td colSpan={5} style={{ textAlign: 'center', fontWeight: 'bold' }}>รวมผลยอดผลลัพธ์จากตัวกรองหน้าออกเอกสารทั้งหมด (SUMMARY TOTAL)</td>
+                <td className="text-right-print font-bold">฿{reportFilteredProducts.reduce((acc, cur) => acc + (!cur.name.includes('ขายแล้ว') ? cur.cost : 0), 0).toLocaleString(undefined, {minimumFractionDigits: 2})} (คลังจม)</td>
+                <td className="text-right-print font-bold">฿{reportFilteredProducts.reduce((acc, cur) => acc + (cur.name.includes('ขายแล้ว') ? parseFloat(cur.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0') : 0), 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                <td className="text-right-print font-bold">฿{reportFilteredProducts.reduce((acc, cur) => acc + (cur.name.includes('ขายแล้ว') ? parseFloat(cur.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0') : 0), 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                <td className="text-right-print font-bold">฿{reportFilteredProducts.reduce((acc, cur) => acc + (cur.name.includes('ขายแล้ว') ? parseFloat(cur.name.match(/หัก 3% จากกำไร: ฿([\d.]+)/)?.[1] || '0') : 0), 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                <td className="text-right-print font-bold" style={{ backgroundColor: '#f0fdf4', color: '#16a34a' }}>
+                  ฿{reportFilteredProducts.reduce((acc, cur) => {
+                    if (!cur.name.includes('ขายแล้ว')) return acc;
+                    const c = cur.cost || 0;
+                    const sp = parseFloat(cur.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0');
+                    const sf = parseFloat(cur.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0');
+                    const cm = parseFloat(cur.name.match(/หัก 3% จากกำไร: ฿([\d.]+)/)?.[1] || '0');
+                    return acc + (sp - c - 30 - sf - cm);
+                  }, 0).toLocaleString(undefined, {minimumFractionDigits: 2})}
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        {/* 🔥 ตู้โชว์สินค้าดีไซน์แยกสัดส่วน + ระบบแบ่งหน้าละ 10 รายการ (Pagination) */}
-        <div className="flex flex-col gap-12 no-print"> {/* gap-12 ช่วยเพิ่มระยะห่างระหว่างบล็อกอย่างสมดุล */}
+        {/* 🔥 ตู้โชว์สินค้าดีไซน์แยกสัดส่วน + ระบบแบ่งหน้าละ 9 รายการ (Pagination ยึดตามฟิลเตอร์เดิมอิสระแยกฝั่ง) */}
+        <div className="flex flex-col gap-12 no-print">
           
           {/* =========================================================
-           * SECTION 1: 🟢 รายการสินค้าอยู่ในสต็อก (คลังสินค้า)
+           * SECTION 1: 🟢 รายการสินค้าอยู่ในสต็อก (คลังสินค้าปัจจุบัน)
            * ========================================================= */}
           <div className="bg-[#1e293b] p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col gap-4">
-            <div className="flex items-center gap-2 border-b border-slate-800 pb-3 mb-2">
-              <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
-              <h2 className="font-bold text-slate-300 text-base">🟢 รายการสินค้าอยู่ในสต็อก / พร้อมจำหน่าย</h2>
-              <span className="text-xs bg-emerald-950 text-emerald-400 font-mono px-2 py-0.5 rounded-md ml-auto">
-                ในคลังทั้งหมด: {filteredProducts.filter(item => !item.name.includes('ขายแล้ว')).length} ชิ้น
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 border-b border-slate-800 pb-3 mb-1">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
+                <h2 className="font-bold text-slate-300 text-base">🟢 รายการสินค้าอยู่ในสต็อก / พร้อมจำหน่าย</h2>
+              </div>
+              <span className="text-xs bg-emerald-950 text-emerald-400 font-mono px-2 py-0.5 rounded-md sm:ml-auto self-start sm:self-auto">
+                ในคลัง: {stockFilteredProducts.length} ชิ้น
               </span>
             </div>
 
-            {(() => {
-              const stockItems = filteredProducts.filter(item => !item.name.includes('ขายแล้ว'));
-              const itemsPerPage = 9;
-              const totalPages = Math.ceil(stockItems.length / itemsPerPage);
-              
-              const startIndex = (stockPage - 1) * itemsPerPage;
-              const displayedStockItems = stockItems.slice(startIndex, startIndex + itemsPerPage);
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-[#111827]/40 p-3 rounded-xl border border-slate-800/60 items-center">
+              <input type="date" value={stockStartDate} onChange={(e) => setStockStartDate(e.target.value)} className="bg-[#111827] border border-slate-700 rounded-xl py-1.5 px-3 text-slate-300 text-xs font-mono" />
+              <input type="date" value={stockEndDate} onChange={(e) => setStockEndDate(e.target.value)} className="bg-[#111827] border border-slate-700 rounded-xl py-1.5 px-3 text-slate-300 text-xs font-mono" />
+              <select value={stockSortBy} onChange={(e) => setStockSortBy(e.target.value)} className="bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs focus:outline-none">
+                <option value="date-desc">🕒 วันที่รับเข้า: ใหม่ ➔ เก่า</option>
+                <option value="date-asc">⏳ วันที่รับเข้า: เก่า ➔ ใหม่</option>
+                <option value="name-asc">🔤 ชื่อสินค้า: ก - ฮ / A - Z</option>
+                <option value="name-desc">🔤 ชื่อสินค้า: ฮ - ก / Z - A</option>
+                <option value="price-desc">💰 ราคาขาย: สูง ➔ ต่ำ</option>
+                <option value="price-asc">🪙 ราคาขาย: ต่ำ ➔ สูง</option>
+                <option value="cost-desc">💵 ราคาทุน: สูง ➔ ต่ำ</option>
+                <option value="cost-asc">💸 ราคาทุน: ต่ำ ➔ สูง</option>
+              </select>
+              <span className="text-[10px] text-slate-500 font-medium md:text-right">กรองระบุสต็อกคลัง</span>
+            </div>
 
-              if (stockItems.length === 0) {
-                return <div className="text-center py-12 text-slate-500 text-xs font-sans">ไม่มีสินค้าพร้อมจำหน่ายในตัวกรองนี้</div>;
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {['ทั้งหมด', 'CPU', 'GPU', 'Memory', 'Mainboard', 'Storage', 'Power Supply', 'Case', 'Cooler'].map((tab) => (
+                <button key={`stock-tab-${tab}`} onClick={() => setStockTab(tab)} className={`text-[11px] font-bold py-1.5 px-3 rounded-lg transition-all ${stockTab === tab ? 'bg-orange-600 text-white shadow-sm' : 'bg-[#111827] text-slate-400 hover:text-white'}`}>{tab === 'ทั้งหมด' ? '🌐 ทุกหมวด' : tab}</button>
+              ))}
+            </div>
+
+            {(() => {
+              const itemsPerPage = 9;
+              const totalPages = Math.ceil(stockFilteredProducts.length / itemsPerPage);
+              const startIndex = (stockPage - 1) * itemsPerPage;
+              const displayedStockItems = stockFilteredProducts.slice(startIndex, startIndex + itemsPerPage);
+
+              if (stockFilteredProducts.length === 0) {
+                return <div className="text-center py-12 text-slate-500 text-xs font-sans">ไม่พบสินค้าพร้อมจำหน่ายตามตัวกรองนี้</div>;
               }
 
               return (
-                <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-6 mt-2">
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-2">
                     {displayedStockItems.map((item) => {
                       const cleanName = item.name.split(' [')[0];
                       return (
                         <ProductCard 
-                          key={item.name}
+                          key={`stock-card-${item.name}`}
                           item={item}
                           onEdit={(clickedItem) => {
                             setEditingProduct(clickedItem); 
@@ -838,34 +929,13 @@ export default function HomeMonitor() {
                     })}
                   </div>
 
-                  {/* 🔢 แถบควบคุมหน้า Pagination ฝั่งของในคลัง */}
                   {totalPages > 1 && (
                     <div className="flex items-center justify-center gap-1.5 pt-4 border-t border-slate-800/60 text-xs font-sans">
-                      <button 
-                        onClick={() => setStockPage(prev => Math.max(prev - 1, 1))}
-                        disabled={stockPage === 1}
-                        className="px-3 py-1.5 rounded-lg bg-[#111827] text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
-                      >
-                        ◀ ก่อนหน้า
-                      </button>
-                      
+                      <button onClick={() => setStockPage(prev => Math.max(prev - 1, 1))} disabled={stockPage === 1} className="px-3 py-1.5 rounded-lg bg-[#111827] text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-colors">◀ ก่อนหน้า</button>
                       {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                        <button
-                          key={`stock-p-${p}`}
-                          onClick={() => setStockPage(p)}
-                          className={`w-8 h-8 rounded-lg font-bold transition-all ${stockPage === p ? 'bg-orange-600 text-white shadow-md' : 'bg-[#111827] text-slate-400 hover:text-white'}`}
-                        >
-                          {p}
-                        </button>
+                        <button key={`stock-p-${p}`} onClick={() => setStockPage(p)} className={`w-8 h-8 rounded-lg font-bold transition-all ${stockPage === p ? 'bg-orange-600 text-white shadow-md' : 'bg-[#111827] text-slate-400 hover:text-white'}`}>{p}</button>
                       ))}
-
-                      <button 
-                        onClick={() => setStockPage(prev => Math.min(prev + 1, totalPages))}
-                        disabled={stockPage === totalPages}
-                        className="px-3 py-1.5 rounded-lg bg-[#111827] text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
-                      >
-                        ถัดไป ▶
-                      </button>
+                      <button onClick={() => setStockPage(prev => Math.min(prev + 1, totalPages))} disabled={stockPage === totalPages} className="px-3 py-1.5 rounded-lg bg-[#111827] text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-colors">ถัดไป ▶</button>
                     </div>
                   )}
                 </div>
@@ -874,31 +944,53 @@ export default function HomeMonitor() {
           </div>
 
           {/* =========================================================
-           * SECTION 2: 🔴 รายการประวัติสินค้าจำหน่ายแล้ว (ปิดดีล)
+           * SECTION 2: 🔴 รายการประวัติสินค้าจำหน่ายแล้ว (ปิดดีลขายออก)
            * ========================================================= */}
           <div className="bg-[#1e293b] p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col gap-4">
-            <div className="flex items-center gap-2 border-b border-slate-800 pb-3 mb-2">
-              <span className="w-3 h-3 rounded-full bg-rose-500" />
-              <h2 className="font-bold text-slate-300 text-base">🔴 ประวัติสินค้าจำหน่ายแล้ว / สรุปงบดุลบัญชี</h2>
-              <span className="text-xs bg-rose-950 text-rose-400 font-mono px-2 py-0.5 rounded-md ml-auto">
-                ขายแล้วทั้งหมด: {filteredProducts.filter(item => item.name.includes('ขายแล้ว')).length} ดีล
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 border-b border-slate-800/80 pb-3 mb-1">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-rose-500" />
+                <h2 className="font-bold text-slate-300 text-base">🔴 ประวัติสินค้าจำหน่ายแล้ว / สรุปงบดุลบัญชี</h2>
+              </div>
+              <span className="text-xs bg-rose-950 text-rose-400 font-mono px-2 py-0.5 rounded-md sm:ml-auto self-start sm:self-auto">
+                ขายแล้ว: {soldFilteredProducts.length} ดีล
               </span>
             </div>
 
-            {(() => {
-              const soldItems = filteredProducts.filter(item => item.name.includes('ขายแล้ว'));
-              const itemsPerPage = 9
-              const totalPages = Math.ceil(soldItems.length / itemsPerPage);
-              
-              const startIndex = (soldPage - 1) * itemsPerPage;
-              const displayedSoldItems = soldItems.slice(startIndex, startIndex + itemsPerPage);
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-[#111827]/40 p-3 rounded-xl border border-slate-800/60 items-center">
+              <input type="date" value={soldStartDate} onChange={(e) => setSoldStartDate(e.target.value)} className="bg-[#111827] border border-slate-700 rounded-xl py-1.5 px-3 text-slate-300 text-xs font-mono" />
+              <input type="date" value={soldEndDate} onChange={(e) => setSoldEndDate(e.target.value)} className="bg-[#111827] border border-slate-700 rounded-xl py-1.5 px-3 text-slate-300 text-xs font-mono" />
+              <select value={soldSortBy} onChange={(e) => setSoldSortBy(e.target.value)} className="bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs focus:outline-none">
+                <option value="date-desc">🕒 วันที่ปิดดีล: ล่าสุด ➔ เก่าสุด</option>
+                <option value="date-asc">⏳ วันที่ปิดดีล: เก่าสุด ➔ ล่าสุด</option>
+                <option value="name-asc">🔤 ชื่อสินค้า: ก - ฮ / A - Z</option>
+                <option value="name-desc">🔤 ชื่อสินค้า: ฮ - ก / Z - A</option>
+                <option value="price-desc">💰 ยอดขายปิดดีล: สูง ➔ ต่ำ</option>
+                <option value="price-asc">🪙 ยอดขายปิดดีล: ต่ำ ➔ สูง</option>
+                <option value="cost-desc">💵 ทุนเดิมสินค้า: สูง ➔ ต่ำ</option>
+                <option value="cost-asc">💸 ทุนเดิมสินค้า: ต่ำ ➔ สูง</option>
+              </select>
+              <span className="text-[10px] text-slate-500 font-medium md:text-right">กรองระบุประวัติบัญชี</span>
+            </div>
 
-              if (soldItems.length === 0) {
-                return <div className="text-center py-12 text-slate-500 text-xs font-sans">ไม่มีประวัติการขายในตัวกรองนี้</div>;
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {['ทั้งหมด', 'CPU', 'GPU', 'Memory', 'Mainboard', 'Storage', 'Power Supply', 'Case', 'Cooler'].map((tab) => (
+                <button key={`sold-tab-${tab}`} onClick={() => setSoldTab(tab)} className={`text-[11px] font-bold py-1.5 px-3 rounded-lg transition-all ${soldTab === tab ? 'bg-rose-600 text-white shadow-sm' : 'bg-[#111827] text-slate-400 hover:text-white'}`}>{tab === 'ทั้งหมด' ? '🌐 ทุกหมวด' : tab}</button>
+              ))}
+            </div>
+
+            {(() => {
+              const itemsPerPage = 9;
+              const totalPages = Math.ceil(soldFilteredProducts.length / itemsPerPage);
+              const startIndex = (soldPage - 1) * itemsPerPage;
+              const displayedSoldItems = soldFilteredProducts.slice(startIndex, startIndex + itemsPerPage);
+
+              if (soldFilteredProducts.length === 0) {
+                return <div className="text-center py-12 text-slate-500 text-xs font-sans">ไม่พบประวัติการขายตามตัวกรองนี้</div>;
               }
 
               return (
-                <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-6 mt-2">
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-2">
                     {displayedSoldItems.map((item) => {
                       const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
@@ -909,7 +1001,7 @@ export default function HomeMonitor() {
 
                       return (
                         <ProductCard 
-                          key={item.name}
+                          key={`sold-card-${item.name}`}
                           item={item}
                           onEdit={(clickedItem) => {
                             setEditingProduct(clickedItem); 
@@ -932,34 +1024,13 @@ export default function HomeMonitor() {
                     })}
                   </div>
 
-                  {/* 🔢 แถบควบคุมหน้า Pagination ฝั่งประวัติขายออก */}
                   {totalPages > 1 && (
                     <div className="flex items-center justify-center gap-1.5 pt-4 border-t border-slate-800/60 text-xs font-sans">
-                      <button 
-                        onClick={() => setSoldPage(prev => Math.max(prev - 1, 1))}
-                        disabled={soldPage === 1}
-                        className="px-3 py-1.5 rounded-lg bg-[#111827] text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
-                      >
-                        ◀ ก่อนหน้า
-                      </button>
-                      
+                      <button onClick={() => setSoldPage(prev => Math.max(prev - 1, 1))} disabled={soldPage === 1} className="px-3 py-1.5 rounded-lg bg-[#111827] text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-colors">◀ ก่อนหน้า</button>
                       {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                        <button
-                          key={`sold-p-${p}`}
-                          onClick={() => setSoldPage(p)}
-                          className={`w-8 h-8 rounded-lg font-bold transition-all ${soldPage === p ? 'bg-orange-600 text-white shadow-md' : 'bg-[#111827] text-slate-400 hover:text-white'}`}
-                        >
-                          {p}
-                        </button>
+                        <button key={`sold-p-${p}`} onClick={() => setSoldPage(p)} className={`w-8 h-8 rounded-lg font-bold transition-all ${soldPage === p ? 'bg-orange-600 text-white shadow-md' : 'bg-[#111827] text-slate-400 hover:text-white'}`}>{p}</button>
                       ))}
-
-                      <button 
-                        onClick={() => setSoldPage(prev => Math.min(prev + 1, totalPages))}
-                        disabled={soldPage === totalPages}
-                        className="px-3 py-1.5 rounded-lg bg-[#111827] text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
-                      >
-                        ถัดไป ▶
-                      </button>
+                      <button onClick={() => setSoldPage(prev => Math.min(prev + 1, totalPages))} disabled={soldPage === totalPages} className="px-3 py-1.5 rounded-lg bg-[#111827] text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-colors">ถัดไป ▶</button>
                     </div>
                   )}
                 </div>
@@ -980,15 +1051,15 @@ export default function HomeMonitor() {
             {message && <div className="p-3 rounded-xl text-center text-xs font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">{message}</div>}
             <form onSubmit={handleReceiveSubmit} className="flex flex-col gap-3 text-xs">
               <div>
-                <label className="text-slate-400 block mb-1 font-bold">1. ชื่อสินค้า <span className="text-red-400">*</span></label>
+                <label className="text-slate-400 block mb-1 font-bold">1. ชื่อสินค้า </label>
                 <input type="text" value={name} onChange={(e) => setName(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="เช่น Intel Core i5-14600K" />
               </div>
               <div>
-                <label className="text-slate-400 block mb-1 font-bold">2. ซีเรียลนัมเบอร์ (S/N) <span className="text-red-400">*</span></label>
+                <label className="text-slate-400 block mb-1 font-bold">2. ซีเรียลนัมเบอร์ (S/N) </label>
                 <input type="text" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="ป้อนหมายเลขซีเรียล..." />
               </div>
               <div>
-                <label className="text-slate-400 block mb-1 font-bold">3. ระบุวันที่รับของ <span className="text-red-400">*</span> </label>
+                <label className="text-slate-400 block mb-1 font-bold">3. ระบุวันที่รับของ </label>
                 <input type="date" value={receivedAt} onChange={(e) => setReceivedAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
               </div>
               <div>
@@ -1036,7 +1107,7 @@ export default function HomeMonitor() {
         </div>
       )}
 
-      {/* 📝 POPUP 3: หน้าต่างแก้ไขสินค้า (ปรับปรุงซ่อนช่องอัปโหลดรูปต้นทางเมื่อสินค้าขายแล้ว) */}
+      {/* 📝 POPUP 3: หน้าต่างแก้ไขสินค้า */}
       {isEditModalOpen && editingProduct && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 no-print font-sans">
           <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md max-h-[90vh] overflow-y-auto relative no-scrollbar font-sans">
@@ -1094,18 +1165,15 @@ export default function HomeMonitor() {
                 </div>
               )}
 
-              {/* 📸 โซนอัปเดตไฟล์ภาพย้อนหลัง */}
               <div className="border-t border-slate-800 pt-3 mt-1 flex flex-col gap-2.5 font-sans">
                 <span className="text-amber-500 font-bold block text-[11px] font-sans">📸 อัปโหลดเปลี่ยนรูปภาพ / เพิ่มรูปภาพทีหลัง:</span>
                 
-                {/* 🟢 แสดงช่องอัปโหลดรูปภาพสินค้าจริงและรูปหลักฐานซื้อ เฉพาะตอนที่สินค้า "ยังไม่ขาย" เท่านั้น */}
                 {!editingProduct.name.includes('ขายแล้ว') && (
                   <>
                     <div>
                       <label className="text-slate-400 block mb-1 text-[11px] font-sans">เปลี่ยนรูปภาพสินค้าจริง:</label>
                       <input type="file" accept="image/*" onChange={(e) => setEditProductFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
                     </div>
-
                     <div>
                       <label className="text-slate-400 block mb-1 text-[11px] font-sans">เปลี่ยนรูปสลิปหลักฐานซื้อ (ทุนแท้):</label>
                       <input type="file" accept="image/*" onChange={(e) => setEditReceiptFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
@@ -1113,7 +1181,6 @@ export default function HomeMonitor() {
                   </>
                 )}
 
-                {/* 🔴 แสดงเฉพาะช่องจัดการไฟล์ฝั่งขาออกย้อนหลัง เมื่อสถานะสินค้าขึ้นว่า "ขายแล้ว" */}
                 {editingProduct.name.includes('ขายแล้ว') && (
                   <>
                     <div>
@@ -1122,7 +1189,7 @@ export default function HomeMonitor() {
                     </div>
                     <div>
                       <label className="text-slate-400 block mb-1 text-[11px] font-sans">เพิ่ม/เปลี่ยน รูปภาพสลิปค่าจัดส่ง:</label>
-                      <input type="file" accept="image/*" onChange={(e) => setEditThemeFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
+                      <input type="file" accept="image/*" onChange={(e) => setEditSlipFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
                     </div>
                     <div>
                       <label className="text-slate-400 block mb-1 text-[11px] font-sans">เพิ่ม/เปลี่ยน รูปถ่ายสินค้าตอนแพ็กของ:</label>
@@ -1184,7 +1251,7 @@ export default function HomeMonitor() {
                 </div>
               )}
               <div>
-                <label className="text-emerald-400 font-bold block mb-1">🧾 อัปโหลดไฟล์ภาพหลักฐานซื้อขาย / สลิปโอนเงินลูกค้า <span className="text-red-400">* บังคับ</span></label>
+                <label className="text-emerald-400 font-bold block mb-1">🧾 อัปโหลดไฟล์ภาพหลักฐานซื้อขาย / สลิปโอนเงินลูกค้า <span className="text-red-400">*</span></label>
                 <input type="file" accept="image/*" onChange={(e) => setSaleProofFile(e.target.files?.[0] || null)} required className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
               <div>
