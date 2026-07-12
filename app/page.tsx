@@ -52,17 +52,27 @@ export default function HomeMonitor() {
   const [stock, setStock] = useState('1'); 
   const [category, setCategory] = useState('CPU');
 
-  // ฟอร์มแก้ไขสินค้า
+  // ฟอร์มแก้ไขสินค้า (เปิดสิทธิ์ให้แก้ไขได้หมดทุกสิ่งอย่าง)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editName, setEditName] = useState('');
   const [editSerialNumber, setEditSerialNumber] = useState('');
+  const [editCost, setEditCost] = useState('');
+  const [editPrice, setEditPrice] = useState('');
+  const [editCategory, setEditCategory] = useState('CPU');
+  const [editStock, setEditStock] = useState('1');
   const [editShippingFee, setEditShippingFee] = useState('');
+  // State ไฟล์สำหรับระบบแก้ไขอัปเดตรูปทีหลัง
+  const [editProductFile, setEditProductFile] = useState<File | null>(null);
+  const [editReceiptFile, setEditReceiptFile] = useState<File | null>(null);
+  const [editSaleProofFile, setEditSaleProofFile] = useState<File | null>(null);
+  const [editSlipFile, setEditSlipFile] = useState<File | null>(null);
+  const [editPackageFile, setEditPackageFile] = useState<File | null>(null);
 
   // ฟอร์มบันทึกการขายออก
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [soldPrice, setSoldPrice] = useState('');
   const [shippingFee, setShippingFee] = useState(''); 
-  const [saleProofFile, setSaleProofFile] = useState<File | null>(null); // ➕ เพิ่มเก็บไฟล์หลักฐานซื้อขายของลูกค้า
+  const [saleProofFile, setSaleProofFile] = useState<File | null>(null); 
   const [slipFile, setSlipFile] = useState<File | null>(null); 
   const [packageFile, setPackageFile] = useState<File | null>(null); 
   const [soldAt, setSoldAt] = useState('');
@@ -154,20 +164,19 @@ export default function HomeMonitor() {
   const handleReceiveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage('');
+
+    // 🛑 ตรวจสอบความปลอดภัยฝั่ง Logic (บังคับต้องเลือกไฟล์รูปภาพและรูปสลิปตอนรับเข้า)
+    if (!productFile || !receiptFile) {
+      alert("❌ กรุณาอัปโหลดรูปภาพสินค้าจริง และ สลิปหลักฐานการซื้อให้ครบถ้วน!");
+      return;
+    }
     
     try {
-      let finalImageUrl = 'https://picsum.photos/200'; 
-      let receiptUrl = 'ไม่มีหลักฐานซื้อ';
-      
-      if (productFile) {
-        setMessage('⏳ กำลังยิงไฟล์รูปภาพสินค้าเข้า Database...');
-        finalImageUrl = await uploadImageToStorage(productFile, 'items');
-      }
+      setMessage('⏳ กำลังยิงไฟล์รูปภาพสินค้าเข้า Database...');
+      const finalImageUrl = await uploadImageToStorage(productFile, 'items');
 
-      if (receiptFile) {
-        setMessage('⏳ กำลังยิงไฟล์รูปหลักฐานการซื้อเข้า Database...');
-        receiptUrl = await uploadImageToStorage(receiptFile, 'receipts');
-      }
+      setMessage('⏳ กำลังยิงไฟล์รูปหลักฐานการซื้อเข้า Database...');
+      const receiptUrl = await uploadImageToStorage(receiptFile, 'receipts');
 
       const finalCost = parseFloat(cost) || 0;
       const finalName = `${name} [รับเข้า: ${receivedAt} | หลักฐานซื้อ: ${receiptUrl}]`;
@@ -204,36 +213,60 @@ export default function HomeMonitor() {
     try {
       const isSold = editingProduct.name.includes('ขายแล้ว');
       let updatedName = '';
+      
+      // ดึงลิงก์เดิมหรือตั้งค่าเริ่มต้นจากระบบ RegEx
+      const matchReceive = editingProduct.name.match(/รับเข้า: ([\d-]+)/);
+      const matchReceipt = editingProduct.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/);
+      
+      let finalProductImageUrl = editingProduct.image_url;
+      let finalBuyReceiptUrl = matchReceipt ? matchReceipt[1] : 'ไม่มีหลักฐานซื้อ';
+
+      // 📸 ตรวจสอบการอัปโหลดรูปสินค้าจริงตัวใหม่ทีหลัง
+      if (editProductFile) {
+        finalProductImageUrl = await uploadImageToStorage(editProductFile, 'items');
+      }
+      // 🧾 ตรวจสอบการอัปโหลดรูปหลักฐานทุนซื้อตัวใหม่ทีหลัง
+      if (editReceiptFile) {
+        finalBuyReceiptUrl = await uploadImageToStorage(editReceiptFile, 'receipts');
+      }
+
+      const nCost = parseFloat(editCost) || 0;
+      const nPrice = parseFloat(editPrice) || 0;
+      const nStock = parseFloat(editStock) || 0;
 
       if (isSold) {
-        const matchPrice = editingProduct.name.match(/ขายแล้ว ฿([\d.]+)/);
-        const matchReceipt = editingProduct.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/);
         const matchSaleProof = editingProduct.name.match(/หลักฐานขาย: ([^\s|]+)/);
         const matchProof = editingProduct.name.match(/สลิปส่ง: ([^\s|]+)/);
         const matchPkg = editingProduct.name.match(/ภาพส่ง: ([^\s|]+)/);
         const matchTime = editingProduct.name.match(/เมื่อ: ([\d-]+)/);
 
-        const sPrice = matchPrice ? parseFloat(matchPrice[1]) : editingProduct.price;
-        const originalBuyReceipt = matchReceipt ? matchReceipt[1] : 'ไม่มีหลักฐานซื้อ';
-        const saleProofUrl = matchSaleProof ? matchSaleProof[1] : 'ไม่มีหลักฐาน';
-        const slipUrl = matchProof ? matchProof[1] : 'ไม่มีหลักฐาน';
-        const packageUrl = matchPkg ? matchPkg[1] : 'ไม่มีภาพถ่ายเพิ่มเติม';
+        let finalSaleProofUrl = matchSaleProof ? matchSaleProof[1] : 'ไม่มีหลักฐาน';
+        let finalShippingSlipUrl = matchProof ? matchProof[1] : 'ไม่มีหลักฐาน';
+        let finalPackageImageUrl = matchPkg ? matchPkg[1] : 'ไม่มีภาพถ่ายเพิ่มเติม';
         const soldDate = matchTime ? matchTime[1] : 'ไม่ระบุ';
 
+        // 📸 ตรวจสอบการเพิ่ม/เปลี่ยน รูปภาพหลักฐานการขาย สลิปส่ง และภาพถ่ายตอนส่งทีหลัง
+        if (editSaleProofFile) {
+          finalSaleProofUrl = await uploadImageToStorage(editSaleProofFile, 'sales_proofs');
+        }
+        if (editSlipFile) {
+          finalShippingSlipUrl = await uploadImageToStorage(editSlipFile, 'slips');
+        }
+        if (editPackageFile) {
+          finalPackageImageUrl = await uploadImageToStorage(editPackageFile, 'packages');
+        }
+
         const newShipFee = parseFloat(editShippingFee) || 0;
-        const baseProfit = sPrice - editingProduct.cost - 30 - newShipFee;
+        const baseProfit = nPrice - nCost - 30 - newShipFee;
         const commission = baseProfit > 0 ? baseProfit * 0.03 : 0;
 
-        updatedName = `${editName} [หลักฐานซื้อ: ${originalBuyReceipt}] [🔴 ขายแล้ว ฿${sPrice} | หัก 3% จากกำไร: ฿${commission.toFixed(2)} | ค่าส่ง: ฿${newShipFee} | หลักฐานขาย: ${saleProofUrl} | สลิปส่ง: ${slipUrl} | ภาพส่ง: ${packageUrl} | เมื่อ: ${soldDate}]`;
+        updatedName = `${editName} [หลักฐานซื้อ: ${finalBuyReceiptUrl}] [🔴 ขายแล้ว ฿${nPrice} | หัก 3% จากกำไร: ฿${commission.toFixed(2)} | ค่าส่ง: ฿${newShipFee} | หลักฐานขาย: ${finalSaleProofUrl} | สลิปส่ง: ${finalShippingSlipUrl} | ภาพส่ง: ${finalPackageImageUrl} | เมื่อ: ${soldDate}]`;
       } else {
-        const matchReceive = editingProduct.name.match(/รับเข้า: ([\d-]+)/);
-        const matchReceipt = editingProduct.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/);
         const originalDate = matchReceive ? matchReceive[1] : new Date().toISOString().slice(0, 10);
-        const originalReceipt = matchReceipt ? matchReceipt[1] : 'ไม่มีหลักฐานซื้อ';
-
-        updatedName = `${editName} [รับเข้า: ${originalDate} | หลักฐานซื้อ: ${originalReceipt}]`;
+        updatedName = `${editName} [รับเข้า: ${originalDate} | หลักฐานซื้อ: ${finalBuyReceiptUrl}]`;
       }
 
+      // ลบแถวเก่าและสลับใส่แถวข้อมูลที่แก้ไขใหม่ทั้งหมด
       await productMutation.mutateAsync({
         url: '/api/products',
         method: 'DELETE',
@@ -245,18 +278,20 @@ export default function HomeMonitor() {
         method: 'POST',
         body: {
           name: updatedName,
-          cost: editingProduct.cost,
-          price: isSold ? parseFloat(editingProduct.price.toString()) : editingProduct.price,
-          stock: editingProduct.stock,
+          cost: nCost,
+          price: nPrice,
+          stock: isSold ? 0 : nStock,
           serial_number: editSerialNumber,
-          category: editingProduct.category,
-          image_url: editingProduct.image_url
+          category: editCategory,
+          image_url: finalProductImageUrl
         }
       });
 
-      alert('🎉 อัปเดตข้อมูลและคำนวณงบบัญชีใหม่สำเร็จ!');
+      alert('🎉 บันทึกการอัปเดตแก้ไขข้อมูลและรูปภาพสำเร็จ!');
       setIsEditModalOpen(false);
       setEditingProduct(null);
+      // เคลียร์ไฟล์ค้างสต็อก
+      setEditProductFile(null); setEditReceiptFile(null); setEditSaleProofFile(null); setEditSlipFile(null); setEditPackageFile(null);
     } catch (err: any) {
       alert("ข้อผิดพลาด: " + err.message);
     }
@@ -266,7 +301,6 @@ export default function HomeMonitor() {
     e.preventDefault();
     if (!selectedProduct) return;
 
-    // 🛑 บังคับเช็ค: ต้องเลือกไฟล์ภาพหลักฐานซื้อขาย/โอนเงินของลูกค้าก่อนปิดดีล
     if (!saleProofFile) {
       alert("❌ บังคับ! กรุณาอัปโหลดไฟล์ภาพหลักฐานซื้อขายหรือสลิปโอนเงินของลูกค้าก่อนยืนยัน");
       return;
@@ -321,11 +355,7 @@ export default function HomeMonitor() {
       });
 
       alert('🎉 บันทึกยอดขายและเก็บหลักฐานเข้า Database สำเร็จ!');
-      setSoldPrice('');
-      setShippingFee('');
-      setSaleProofFile(null);
-      setSlipFile(null);
-      setPackageFile(null);
+      setSoldPrice(''); setShippingFee(''); setSaleProofFile(null); setSlipFile(null); setPackageFile(null);
       setIsSellModalOpen(false);
     } catch (err: any) {
       alert("เกิดข้อผิดพลาด: " + err.message);
@@ -454,14 +484,13 @@ export default function HomeMonitor() {
     }
   });
 
-  // --- จัดเตรียมข้อมูลการเงินแยกตามหมวดหมู่ (สำหรับกราฟแท่ง) ---
   const categoryFinancialMap: Record<string, { sales: number; profit: number }> = {
     'CPU': { sales: 0, profit: 0 },
     'GPU': { sales: 0, profit: 0 },
     'Memory': { sales: 0, profit: 0 },
     'Mainboard': { sales: 0, profit: 0 },
     'Storage': { sales: 0, profit: 0 },
-    'Power Supply / Case': { sales: 0, profit: 0 }
+    'PSU / Case': { sales: 0, profit: 0 }
   };
 
   filteredProducts.forEach((item) => {
@@ -559,7 +588,7 @@ export default function HomeMonitor() {
         }
       `}</style>
 
-      {/* 📄 ส่วนหัวรายงานสำหรับพิมพ์ลงกระดาษ PDF */}
+      {/* ส่วนหัวรายงาน PDF */}
       <div className="hidden print-report-header text-black">
         <h1 className="text-xl font-bold tracking-tight">รายงานประวัติสินค้าและสรุปงบดุลบัญชีการเงิน</h1>
         <p className="text-xs mt-1">ประเภทหมวดหมู่: <span className="font-bold">{selectedTab}</span> | ตัวกรองสถานะ: <span className="font-bold">{selectedStatus}</span></p>
@@ -605,18 +634,14 @@ export default function HomeMonitor() {
           </div>
         </div>
 
-        {/* 📊 แผง Dashboard อัจฉริยะด้วย Recharts */}
+        {/* 📊 แผง Dashboard ด้วย Recharts */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 bg-[#1e293b] p-6 rounded-2xl border border-slate-800 shadow-xl items-center no-print">
-          
-          {/* ฝั่งซ้าย: ข้อมูลตัวเลขสรุปทรัพย์สิน */}
           <div className="flex flex-col justify-between gap-4 lg:col-span-1 h-full py-1">
             <div>
               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide">📦 สรุปมูลค่าทรัพย์สินคลังปัจจุบัน</h3>
               <div className="text-3xl font-black text-white mt-1">฿{totalStockCostValue.toLocaleString(undefined, {maximumFractionDigits: 2})}</div>
-              <p className="text-xs text-slate-500 leading-relaxed mt-2">คำนวณจากราคาทุนเพียว ๆ ของรายการสินค้าทั้งหมดที่ยังสแตนด์บายอยู่ในสถานะสต็อกแยกตามประเภท</p>
+              <p className="text-xs text-slate-500 leading-relaxed mt-2">คำนวณจากราคาทุนเพียว ๆ ของรายการสินค้าทั้งหมดที่ยังอยู่ในคลัง</p>
             </div>
-            
-            {/* รายการ Badge บอกสัดส่วน */}
             <div className="grid grid-cols-1 gap-1.5 text-xs text-slate-400 mt-2">
               {Object.keys(categoryCostMap).map((cat) => {
                 const costValue = categoryCostMap[cat];
@@ -636,28 +661,14 @@ export default function HomeMonitor() {
             </div>
           </div>
           
-          {/* ฝั่งกลาง: กราฟวงกลม Donut Chart */}
           <div className="flex justify-center items-center lg:col-span-1 h-56 relative w-full">
             {totalStockCostValue > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={donutData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={3}
-                    dataKey="value"
-                  >
-                    {donutData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
+                  <Pie data={donutData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={3} dataKey="value">
+                    {donutData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                   </Pie>
-                  <Tooltip 
-                    formatter={((value: any, name: any) => [`฿${Number(value).toLocaleString()}`, name]) as any}
-                    contentStyle={{ backgroundColor: '#111827', borderColor: '#334155', borderRadius: '12px', fontSize: '12px', color: '#fff' }}
-                  />
+                  <Tooltip formatter={((value: any, name: any) => [`฿${Number(value).toLocaleString()}`, name]) as any} contentStyle={{ backgroundColor: '#111827', borderColor: '#334155', borderRadius: '12px', fontSize: '12px', color: '#fff' }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
@@ -665,74 +676,47 @@ export default function HomeMonitor() {
             )}
             {totalStockCostValue > 0 && (
               <div className="absolute inset-0 flex flex-col justify-center items-center text-center pointer-events-none">
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Asset</span>
-                <span className="text-xs font-black text-white mt-0.5">คลังสินค้า</span>
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">ทุนคลังสินค้า</span>
+                <span className="text-xs font-black text-white mt-0.5">ปัจจุบัน</span>
               </div>
             )}
           </div>
 
-          {/* ฝั่งขวา: กราฟแท่งเปรียบเทียบ ยอดขาย VS กำไรสุทธิ */}
           <div className="h-56 lg:col-span-1 w-full flex flex-col justify-center">
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 text-center lg:text-left">📊 สรุปงบรายรับและกำไรสุทธิแยกตามหมวด</h4>
             <ResponsiveContainer width="100%" height="85%">
               <BarChart data={barData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
-                <XAxis 
-                  dataKey="category" 
-                  tick={{ fill: '#94a3b8', fontSize: 9 }} 
-                  axisLine={false} 
-                  tickLine={false} 
-                  interval={0}
-                  angle={-25}        
-                  textAnchor="end"   
-                  height={45}        
-                />
+                <XAxis dataKey="category" tick={{ fill: '#94a3b8', fontSize: 9 }} axisLine={false} tickLine={false} interval={0} angle={-25} textAnchor="end" height={45} />
                 <YAxis tick={{ fill: '#94a3b8', fontSize: 9 }} axisLine={false} tickLine={false} />
-                <Tooltip 
-                  formatter={((value: any) => [`฿${Number(value).toLocaleString()}`]) as any}
-                  contentStyle={{ backgroundColor: '#111827', borderColor: '#334155', borderRadius: '12px', fontSize: '11px', color: '#fff' }}
-                />
+                <Tooltip formatter={((value: any) => [`฿${Number(value).toLocaleString()}`]) as any} contentStyle={{ backgroundColor: '#111827', borderColor: '#334155', borderRadius: '12px', fontSize: '11px', color: '#fff' }} />
                 <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '5px' }} />
                 <Bar dataKey="ยอดขาย" fill="#10b981" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="กำไรสุทธิ" fill="#f97316" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-
         </div>
 
-        {/* 📅 แผงเครื่องมือควบคุม */}
+        {/* 📅 เครื่องมือควบคุม */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 bg-[#1e293b] p-4 rounded-xl border border-slate-800 items-center no-print">
           <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
           <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
-          
-          <button onClick={exportToExcel} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5">
-            📊 Export เป็น Excel
-          </button>
-          <button onClick={exportToPDF} className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-black py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5">
-            📄 Print / Save เป็น PDF
-          </button>
-          
+          <button onClick={exportToExcel} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5">📊 Export เป็น Excel</button>
+          <button onClick={exportToPDF} className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-black py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5">📄 Print / Save เป็น PDF</button>
           <div className="text-xs text-slate-400 md:text-right md:col-span-1">กรองพบทั้งหมด <span className="text-orange-400 font-bold text-sm">{filteredProducts.length}</span> ชิ้น</div>
         </div>
 
-        {/* ตัวกรองสถานะสินค้า */}
+        {/* แถบตัวกรอง */}
         <div className="flex flex-wrap gap-2 bg-[#1e293b] p-3 rounded-xl border border-slate-800 no-print">
           {[
             { id: 'ทั้งหมด', label: '🌐 แสดงทุกสถานะ' },
             { id: 'อยู่ในสต็อก', label: '🟢 อยู่ในสต็อก (คลังสินค้า)' },
             { id: 'จำหน่ายแล้ว', label: '🔴 จำหน่ายแล้ว (ปิดดีล)' }
           ].map((status) => (
-            <button
-              key={status.id}
-              onClick={() => setSelectedStatus(status.id)}
-              className={`text-xs font-bold py-2 px-4 rounded-lg transition-all ${selectedStatus === status.id ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'bg-[#111827] text-slate-400 hover:text-white'}`}
-            >
-              {status.label}
-            </button>
+            <button key={status.id} onClick={() => setSelectedStatus(status.id)} className={`text-xs font-bold py-2 px-4 rounded-lg transition-all ${selectedStatus === status.id ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'bg-[#111827] text-slate-400 hover:text-white'}`}>{status.label}</button>
           ))}
         </div>
 
-        {/* หมวดหมู่ */}
         <div className="flex flex-wrap gap-2 bg-[#1e293b] p-3 rounded-xl border border-slate-800 no-print">
           {['ทั้งหมด', 'CPU', 'GPU', 'Memory', 'Mainboard', 'Storage', 'Power Supply / Case'].map((tab) => (
             <button key={tab} onClick={() => setSelectedTab(tab)} className={`text-xs font-bold py-2 px-4 rounded-lg transition-all ${selectedTab === tab ? 'bg-orange-600 text-white shadow-md' : 'bg-[#111827] text-slate-400 hover:text-white'}`}>{tab === 'ทั้งหมด' ? '🌐 รวมทุกชนิด' : tab}</button>
@@ -744,16 +728,8 @@ export default function HomeMonitor() {
           <table>
             <thead>
               <tr>
-                <th>วันที่ทำรายการ</th>
-                <th>รายละเอียดสินค้า</th>
-                <th>Serial Number (S/N)</th>
-                <th>หมวดหมู่</th>
-                <th>สถานะ</th>
-                <th className="text-right-print">ต้นทุนรับเข้า (฿)</th>
-                <th className="text-right-print">ราคาปิดการขาย (฿)</th>
-                <th className="text-right-print">ค่าขนส่งจริง (฿)</th>
-                <th className="text-right-print">นายหน้า 3% (฿)</th>
-                <th className="text-right-print">กำไรสุทธิ (฿)</th>
+                <th>วันที่ทำรายการ</th><th>รายละเอียดสินค้า</th><th>Serial Number (S/N)</th><th>หมวดหมู่</th><th>สถานะ</th>
+                <th className="text-right-print">ต้นทุนรับเข้า (฿)</th><th className="text-right-print">ราคาปิดการขาย (฿)</th><th className="text-right-print">ค่าขนส่งจริง (฿)</th><th className="text-right-print">นายหน้า 3% (฿)</th><th className="text-right-print">กำไรสุทธิ (฿)</th>
               </tr>
             </thead>
             <tbody>
@@ -777,18 +753,12 @@ export default function HomeMonitor() {
 
                 return (
                   <tr key={item.name}>
-                    <td>{displayDate}</td>
-                    <td>{cleanName}</td>
-                    <td className="font-mono">{item.serial_number || '-'}</td>
-                    <td>{item.category}</td>
-                    <td>{isSold ? 'ขายแล้ว' : 'ในสต็อก'}</td>
+                    <td>{displayDate}</td><td>{cleanName}</td><td className="font-mono">{item.serial_number || '-'}</td><td>{item.category}</td><td>{isSold ? 'ขายแล้ว' : 'ในสต็อก'}</td>
                     <td className="text-right-print">฿{cost.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td className="text-right-print">{isSold ? `฿${sellPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '-'}</td>
                     <td className="text-right-print">{isSold ? `฿${shipFee.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '-'}</td>
                     <td className="text-right-print">{isSold ? `฿${commission.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '-'}</td>
-                    <td className="text-right-print" style={{ color: isSold && itemNetProfit > 0 ? '#10b981' : '#000' }}>
-                      {isSold ? `฿${itemNetProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '-'}
-                    </td>
+                    <td className="text-right-print" style={{ color: isSold && itemNetProfit > 0 ? '#10b981' : '#000' }}>{isSold ? `฿${itemNetProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '-'}</td>
                   </tr>
                 );
               })}
@@ -798,9 +768,7 @@ export default function HomeMonitor() {
                 <td className="text-right-print font-bold">฿{totalSalesAll.toLocaleString(undefined, {maximumFractionDigits: 2})}</td>
                 <td className="text-right-print font-bold">฿{totalShippingFeeAll.toLocaleString(undefined, {maximumFractionDigits: 2})}</td>
                 <td className="text-right-print font-bold">฿{totalCommissionAll.toLocaleString(undefined, {maximumFractionDigits: 2})}</td>
-                <td className="text-right-print font-bold" style={{ backgroundColor: '#f0fdf4', color: '#16a34a' }}>
-                  ฿{totalNetProfitAll.toLocaleString(undefined, {maximumFractionDigits: 2})}
-                </td>
+                <td className="text-right-print font-bold" style={{ backgroundColor: '#f0fdf4', color: '#16a34a' }}>฿{totalNetProfitAll.toLocaleString(undefined, {maximumFractionDigits: 2})}</td>
               </tr>
             </tbody>
           </table>
@@ -908,21 +876,18 @@ export default function HomeMonitor() {
                               <a href={saleProofUrl} target="_blank" rel="noreferrer" className="text-emerald-400 underline font-semibold hover:text-emerald-300">🔗 ดูรูปสลิปซื้อขาย</a>
                             </div>
                           )}
-
                           {proofUrl && proofUrl.startsWith('http') && (
                             <div className="flex justify-between text-[11px] items-center mt-0.5">
                               <span className="text-slate-500">🧾 สลิปส่งของ:</span>
                               <a href={proofUrl} target="_blank" rel="noreferrer" className="text-indigo-400 underline font-semibold hover:text-indigo-300">🔗 ดูรูปสลิปค่าส่งของ</a>
                             </div>
                           )}
-
                           {pkgUrl && pkgUrl.startsWith('http') && (
                             <div className="flex justify-between text-[11px] items-center mt-0.5">
                               <span className="text-slate-500">📸 ภาพถ่ายแพ็กของสินค้า:</span>
                               <a href={pkgUrl} target="_blank" rel="noreferrer" className="text-indigo-400 underline font-semibold hover:text-indigo-300">🔗 ดูรูปสินค้าตอนแพ็ก</a>
                             </div>
                           )}
-
                           <div className="flex justify-between text-[10px] text-slate-500 mt-1">
                             <span>📅 วันที่ปิดดีลขาย:</span>
                             <span className="font-mono">{sellDate}</span>
@@ -941,13 +906,16 @@ export default function HomeMonitor() {
                             setEditingProduct(item); 
                             setEditName(cleanName); 
                             setEditSerialNumber(item.serial_number); 
-                            const matchShip = item.name.match(/ค่าส่ง: ฿([\d.]+)/);
-                            setEditShippingFee(matchShip ? matchShip[1] : '0');
+                            setEditCost(item.cost.toString());
+                            setEditPrice(sellPrice.toString());
+                            setEditCategory(item.category);
+                            setEditStock(item.stock.toString());
+                            setEditShippingFee(shipFee.toString());
                             setIsEditModalOpen(true); 
                           }} 
                           className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold py-1.5 px-3.5 rounded-lg transition-colors"
                         >
-                          📝 แก้ไข
+                          📝 แก้ไขรายการ
                         </button>
                         {!isSold && (
                           <button onClick={() => { setSelectedProduct(item); setIsSellModalOpen(true); }} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-4 rounded-lg">💰 บันทึกขายออก</button>
@@ -955,7 +923,6 @@ export default function HomeMonitor() {
                         <button onClick={() => handleDelete(item.name)} className="bg-red-950/20 hover:bg-red-600 text-red-400 text-xs font-bold py-1.5 px-3 rounded-lg">🗑️ ลบ</button>
                       </div>
                     </div>
-
                   </div>
                 );
               })}
@@ -974,44 +941,44 @@ export default function HomeMonitor() {
             {message && <div className="p-3 rounded-xl text-center text-xs font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">{message}</div>}
             <form onSubmit={handleReceiveSubmit} className="flex flex-col gap-3 text-xs">
               <div>
-                <label className="text-slate-400 block mb-1 font-bold">1. ชื่อสินค้า</label>
+                <label className="text-slate-400 block mb-1 font-bold">1. ชื่อสินค้า <span className="text-red-400">*</span></label>
                 <input type="text" value={name} onChange={(e) => setName(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="เช่น Intel Core i5-14600K" />
               </div>
               <div>
-                <label className="text-slate-400 block mb-1 font-bold">2. ซีเรียลนัมเบอร์ (S/N)</label>
+                <label className="text-slate-400 block mb-1 font-bold">2. ซีเรียลนัมเบอร์ (S/N) <span className="text-red-400">*</span></label>
                 <input type="text" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="ป้อนหมายเลขซีเรียล..." />
               </div>
               <div>
-                <label className="text-slate-400 block mb-1 font-bold">3. ระบุวันที่รับของ</label>
+                <label className="text-slate-400 block mb-1 font-bold">3. ระบุวันที่รับของ <span className="text-red-400">*</span></label>
                 <input type="date" value={receivedAt} onChange={(e) => setReceivedAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
               </div>
               <div>
-                <label className="text-orange-400 block mb-1 font-bold">4. 📸 เลือกอัปโหลดไฟล์รูปภาพสินค้าจริง (ยิงเข้า Database)</label>
-                <input type="file" accept="image/*" onChange={(e) => setProductFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
+                <label className="text-orange-400 block mb-1 font-bold">4. 📸 เลือกอัปโหลดไฟล์รูปภาพสินค้าจริง <span className="text-red-400">* บังคับให้หมด</span></label>
+                <input type="file" accept="image/*" onChange={(e) => setProductFile(e.target.files?.[0] || null)} required className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
               <div>
-                <label className="text-orange-400 block mb-1 font-bold">5. 🧾 อัปโหลดรูปสลิปโอนเงิน / ใบเสร็จหลักฐานการซื้อ (ทุนแท้)</label>
-                <input type="file" accept="image/*" onChange={(e) => setReceiptFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
+                <label className="text-orange-400 block mb-1 font-bold">5. 🧾 อัปโหลดรูปสลิปโอนเงิน / ใบเสร็จหลักฐานการซื้อ <span className="text-red-400">* บังคับให้หมด</span></label>
+                <input type="file" accept="image/*" onChange={(e) => setReceiptFile(e.target.files?.[0] || null)} required className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-slate-400 block mb-1 font-bold">6. ราคาทุนที่ได้มา (ทุนแท้เพียวๆ)</label>
+                  <label className="text-slate-400 block mb-1 font-bold">6. ราคาทุนที่ได้มา <span className="text-red-400">*</span></label>
                   <input type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="฿ ต้นทุนราคาสินค้า" />
                 </div>
                 <div>
-                  <label className="text-slate-400 block mb-1 font-bold">7. ประเภทสินค้า</label>
-                  <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm">
+                  <label className="text-slate-400 block mb-1 font-bold">7. ประเภทสินค้า <span className="text-red-400">*</span></label>
+                  <select value={category} onChange={(e) => setCategory(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm">
                     <option value="CPU">CPU</option><option value="GPU">GPU</option><option value="Memory">Memory</option><option value="Mainboard">Mainboard</option><option value="Storage">Storage</option><option value="Power Supply / Case">Power Supply / Case</option>
                   </select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-slate-400 block mb-1 font-bold">ราคาตั้งขายเบื้องต้น</label>
+                  <label className="text-slate-400 block mb-1 font-bold">ราคาตั้งขายเบื้องต้น <span className="text-red-400">*</span></label>
                   <input type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="฿ ตั้งเป้าขาย" />
                 </div>
                 <div>
-                  <label className="text-slate-400 block mb-1 font-bold">จำนวนสินค้าเข้าคลัง</label>
+                  <label className="text-slate-400 block mb-1 font-bold">จำนวนสินค้าเข้าคลัง <span className="text-red-400">*</span></label>
                   <input type="number" value={stock} onChange={(e) => setStock(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="จำนวนชิ้น" />
                 </div>
               </div>
@@ -1023,47 +990,90 @@ export default function HomeMonitor() {
         </div>
       )}
 
-      {/* 📝 POPUP 3: หน้าต่างแก้ไขสินค้า */}
+      {/* 📝 POPUP 3: หน้าต่างแก้ไขสินค้า (อัปเกรดให้แก้ได้หมดทุกช่อง + อัปเพิ่มรูปภาพทีหลังได้) */}
       {isEditModalOpen && editingProduct && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 no-print">
-          <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md relative">
+          <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md max-h-[90vh] overflow-y-auto relative no-scrollbar">
             <button onClick={() => { setIsEditModalOpen(false); setEditingProduct(null); }} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 w-7 h-7 flex items-center justify-center rounded-full">✕</button>
-            <h2 className="font-bold text-amber-500 text-base border-b border-slate-800 pb-2">📝 แก้ไขรายละเอียดข้อมูลสินค้า</h2>
-            <div className="bg-[#111827] p-3 rounded-xl border border-slate-800 text-[11px] text-slate-400">
-              <p>⚠️ ระบบอนุญาตให้แก้ไขเฉพาะ ชื่อสินค้า, S/N และค่าจัดส่ง (สำหรับชิ้นที่ขายออกแล้ว)</p>
-            </div>
-            <form onSubmit={handleEditSubmit} className="flex flex-col gap-3 text-xs">
+            <h2 className="font-bold text-amber-500 text-base border-b border-slate-800 pb-2">📝 โหมดแก้ไขและเพิ่มหลักฐานรูปภาพย้อนหลัง</h2>
+            
+            <form onSubmit={handleEditSubmit} className="flex flex-col gap-3 text-xs📦">
               <div>
-                <label className="text-slate-400 block mb-1 font-bold">1. แก้ไขชื่อสินค้า</label>
-                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm focus:border-amber-500 focus:outline-none" />
+                <label className="text-slate-400 block mb-1 font-bold">แก้ไขชื่อสินค้า</label>
+                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" />
               </div>
-              <div>
-                <label className="text-slate-400 block mb-1 font-bold">2. แก้ไขรหัสซีเรียลนัมเบอร์ (S/N)</label>
-                <input type="text" value={editSerialNumber} onChange={(e) => setEditSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
-              </div>
-              
-              {/* ช่องกรอกค่าส่งที่จะโชว์ให้แก้เฉพาะรายการสินค้าที่ขายแล้วเท่านั้น */}
-              {editingProduct.name.includes('ขายแล้ว') && (
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-orange-400 block mb-1 font-bold">➕ แก้ไขยอดค่าจัดส่งจริง (ชำระขนส่ง)</label>
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    value={editShippingFee} 
-                    onChange={(e) => setEditShippingFee(e.target.value)} 
-                    required 
-                    className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm font-mono focus:border-orange-500 focus:outline-none" 
-                    placeholder="แก้ไขจำนวนเงินค่าส่ง..." 
-                  />
+                  <label className="text-slate-400 block mb-1 font-bold">แก้ไข S/N</label>
+                  <input type="text" value={editSerialNumber} onChange={(e) => setEditSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">แก้ไขหมวดหมู่</label>
+                  <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm">
+                    <option value="CPU">CPU</option><option value="GPU">GPU</option><option value="Memory">Memory</option><option value="Mainboard">Mainboard</option><option value="Storage">Storage</option><option value="Power Supply / Case">Power Supply / Case</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">ราคาทุนสินค้า (บาท)</label>
+                  <input type="number" step="0.01" value={editCost} onChange={(e) => setEditCost(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">{editingProduct.name.includes('ขายแล้ว') ? 'ราคาที่ปิดยอดขาย (บาท)' : 'ราคาตั้งขายสินค้า (บาท)'}</label>
+                  <input type="number" step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" />
+                </div>
+              </div>
+
+              {!editingProduct.name.includes('ขายแล้ว') && (
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">จำนวนสินค้าคงเหลือในคลัง</label>
+                  <input type="number" value={editStock} onChange={(e) => setEditStock(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" />
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3 bg-[#111827]/40 p-2.5 rounded-xl border border-slate-800/60 text-[11px] text-slate-500">
-                <div>📁 หมวดหมู่: <span className="text-slate-300 font-bold">{editingProduct.category}</span></div>
-                <div>💰 ราคาทุนคลัง: <span className="text-slate-300 font-bold">฿{editingProduct.cost.toLocaleString()}</span></div>
+              {editingProduct.name.includes('ขายแล้ว') && (
+                <div>
+                  <label className="text-orange-400 block mb-1 font-bold">🚚 แก้ไขยอดค่าจัดส่งขนส่งจริง (บาท)</label>
+                  <input type="number" step="0.01" value={editShippingFee} onChange={(e) => setEditShippingFee(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm font-mono focus:border-orange-500" />
+                </div>
+              )}
+
+              {/* 📸 โซนอัปเดต / เพิ่มไฟล์ภาพทีหลังย้อนหลัง */}
+              <div className="border-t border-slate-800 pt-3 mt-1 flex flex-col gap-2.5">
+                <span className="text-amber-500 font-bold block text-[11px]">📸 อัปโหลดเปลี่ยนรูปภาพ / เพิ่มรูปภาพทีหลัง:</span>
+                
+                <div>
+                  <label className="text-slate-400 block mb-1 text-[11px]">เปลี่ยนรูปภาพสินค้าจริง:</label>
+                  <input type="file" accept="image/*" onChange={(e) => setEditProductFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs" />
+                </div>
+
+                <div>
+                  <label className="text-slate-400 block mb-1 text-[11px]">เปลี่ยนรูปสลิปหลักฐานซื้อ (ทุนแท้):</label>
+                  <input type="file" accept="image/*" onChange={(e) => setEditReceiptFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs" />
+                </div>
+
+                {editingProduct.name.includes('ขายแล้ว') && (
+                  <>
+                    <div>
+                      <label className="text-emerald-400 block mb-1 text-[11px]">เปลี่ยนรูปภาพสลิปหลักฐานขายลูกค้า:</label>
+                      <input type="file" accept="image/*" onChange={(e) => setEditSaleProofFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs" />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1 text-[11px]">เพิ่ม/เปลี่ยน รูปภาพสลิปค่าจัดส่ง:</label>
+                      <input type="file" accept="image/*" onChange={(e) => setEditSlipFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs" />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1 text-[11px]">เพิ่ม/เปลี่ยน รูปถ่ายสินค้าตอนแพ็กของ:</label>
+                      <input type="file" accept="image/*" onChange={(e) => setEditPackageFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs" />
+                    </div>
+                  </>
+                )}
               </div>
-              <button type="submit" disabled={productMutation.isPending} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-4 rounded-xl shadow-md mt-1 text-sm transition-colors">
-                {productMutation.isPending ? '⏳ กำลังบันทึกข้อมูลแก้ไขลง Database...' : '✅ ยืนยันและบันทึกการแก้ไข'}
+
+              <button type="submit" disabled={productMutation.isPending} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-4 rounded-xl shadow-md mt-2 text-sm">
+                {productMutation.isPending ? '⏳ กำลังบันทึกและอัปเดตไฟล์ลงคลัง...' : '✅ ยืนยันและบันทึกการแก้ไขทั้งหมด'}
               </button>
             </form>
           </div>
@@ -1113,24 +1123,18 @@ export default function HomeMonitor() {
                   </div>
                 </div>
               )}
-
-              {/* ➕ 1. ช่องบังคับใส่ใหม่: รูปภาพสลิปใบเสร็จซื้อขาย/หลักฐานโอนเงินของลูกค้า */}
               <div>
                 <label className="text-emerald-400 font-bold block mb-1">🧾 อัปโหลดไฟล์ภาพหลักฐานซื้อขาย / สลิปโอนเงินลูกค้า <span className="text-red-400">* บังคับ</span></label>
                 <input type="file" accept="image/*" onChange={(e) => setSaleProofFile(e.target.files?.[0] || null)} required className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
-
-              {/* 🔍 2. ช่องเดิม: ปรับปรุงให้เป็นออปชันเสริม ไม่บังคับใส่แล้ว (ลบ required ออก) */}
               <div>
                 <label className="text-slate-400 font-bold block mb-1">🚚 อัปโหลดไฟล์ภาพสลิปใบเสร็จค่าขนส่ง (ถ้ามี)</label>
                 <input type="file" accept="image/*" onChange={(e) => setSlipFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
-
               <div>
                 <label className="text-slate-400 font-bold block mb-1">📸 อัปโหลดไฟล์รูปถ่ายสินค้าตอนแพ็กหรือส่ง (ถ้ามี)</label>
                 <input type="file" accept="image/*" onChange={(e) => setPackageFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
-              
               <button type="submit" disabled={productMutation.isPending} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl shadow-md mt-1 text-sm">
                 {productMutation.isPending ? '⏳ กำลังอัปโหลดภาพและเซฟงบลง Database...' : '✅ ยืนยันปิดดีลและบันทึกหลักฐานทั้งหมด'}
               </button>
