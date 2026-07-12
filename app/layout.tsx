@@ -35,16 +35,16 @@ export default function RootLayout({
   }));
 
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">
-        {/* 📦 3. ครอบ QueryClientProvider หุ้ม children ทั้งหมดไว้ */}
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </body>
-    </html>
-  );
+  <html
+    lang="en"
+    /* 👈 เช็คให้ชัวร์ว่ามี geistSans.variable และ geistMono.variable แปะอยู่ตรงนี้ */
+    className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+  >
+    <body className="min-h-full flex flex-col">
+      <QueryClientProvider client={queryClient}>
+        {children}
+      </QueryClientProvider>
+    </body>
+  </html>
+);
 }

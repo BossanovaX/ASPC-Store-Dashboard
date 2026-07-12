@@ -990,26 +990,27 @@ export default function HomeMonitor() {
         </div>
       )}
 
-      {/* 📝 POPUP 3: หน้าต่างแก้ไขสินค้า (อัปเกรดให้แก้ได้หมดทุกช่อง + อัปเพิ่มรูปภาพทีหลังได้) */}
+      {/* 📝 POPUP 3: หน้าต่างแก้ไขสินค้า (อัปเกรดแบบใส่คลาสฟอนต์ทุกช่องอินพุต) */}
       {isEditModalOpen && editingProduct && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 no-print">
-          <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md max-h-[90vh] overflow-y-auto relative no-scrollbar">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 no-print font-sans">
+          <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md max-h-[90vh] overflow-y-auto relative no-scrollbar font-sans">
             <button onClick={() => { setIsEditModalOpen(false); setEditingProduct(null); }} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 w-7 h-7 flex items-center justify-center rounded-full">✕</button>
-            <h2 className="font-bold text-amber-500 text-base border-b border-slate-800 pb-2">📝 โหมดแก้ไขและเพิ่มหลักฐานรูปภาพย้อนหลัง</h2>
+            <h2 className="font-bold text-amber-500 text-base border-b border-slate-800 pb-2 font-sans">📝 โหมดแก้ไขและเพิ่มหลักฐานรูปภาพย้อนหลัง</h2>
             
-            <form onSubmit={handleEditSubmit} className="flex flex-col gap-3 text-xs📦">
+            <form onSubmit={handleEditSubmit} className="flex flex-col gap-3 text-xs font-sans">
               <div>
-                <label className="text-slate-400 block mb-1 font-bold">แก้ไขชื่อสินค้า</label>
-                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" />
+                <label className="text-slate-400 block mb-1 font-bold font-sans">แก้ไขชื่อสินค้า</label>
+                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm font-sans focus:border-amber-500 focus:outline-none" />
               </div>
+              
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-slate-400 block mb-1 font-bold">แก้ไข S/N</label>
-                  <input type="text" value={editSerialNumber} onChange={(e) => setEditSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
+                  <label className="text-slate-400 block mb-1 font-bold font-sans">แก้ไข S/N</label>
+                  <input type="text" value={editSerialNumber} onChange={(e) => setEditSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm focus:border-amber-500 focus:outline-none" />
                 </div>
                 <div>
-                  <label className="text-slate-400 block mb-1 font-bold">แก้ไขหมวดหมู่</label>
-                  <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm">
+                  <label className="text-slate-400 block mb-1 font-bold font-sans">แก้ไขหมวดหมู่</label>
+                  <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm font-sans focus:border-amber-500 focus:outline-none">
                     <option value="CPU">CPU</option><option value="GPU">GPU</option><option value="Memory">Memory</option><option value="Mainboard">Mainboard</option><option value="Storage">Storage</option><option value="Power Supply / Case">Power Supply / Case</option>
                   </select>
                 </div>
@@ -1017,62 +1018,62 @@ export default function HomeMonitor() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-slate-400 block mb-1 font-bold">ราคาทุนสินค้า (บาท)</label>
-                  <input type="number" step="0.01" value={editCost} onChange={(e) => setEditCost(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" />
+                  <label className="text-slate-400 block mb-1 font-bold font-sans">ราคาทุนสินค้า (บาท)</label>
+                  <input type="number" step="0.01" value={editCost} onChange={(e) => setEditCost(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
                 </div>
                 <div>
-                  <label className="text-slate-400 block mb-1 font-bold">{editingProduct.name.includes('ขายแล้ว') ? 'ราคาที่ปิดยอดขาย (บาท)' : 'ราคาตั้งขายสินค้า (บาท)'}</label>
-                  <input type="number" step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" />
+                  <label className="text-slate-400 block mb-1 font-bold font-sans">{editingProduct.name.includes('ขายแล้ว') ? 'ราคาที่ปิดยอดขาย (บาท)' : 'ราคาตั้งขายสินค้า (บาท)'}</label>
+                  <input type="number" step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
                 </div>
               </div>
 
               {!editingProduct.name.includes('ขายแล้ว') && (
                 <div>
-                  <label className="text-slate-400 block mb-1 font-bold">จำนวนสินค้าคงเหลือในคลัง</label>
-                  <input type="number" value={editStock} onChange={(e) => setEditStock(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" />
+                  <label className="text-slate-400 block mb-1 font-bold font-sans">จำนวนสินค้าคงเหลือในคลัง</label>
+                  <input type="number" value={editStock} onChange={(e) => setEditStock(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
                 </div>
               )}
 
               {editingProduct.name.includes('ขายแล้ว') && (
                 <div>
-                  <label className="text-orange-400 block mb-1 font-bold">🚚 แก้ไขยอดค่าจัดส่งขนส่งจริง (บาท)</label>
-                  <input type="number" step="0.01" value={editShippingFee} onChange={(e) => setEditShippingFee(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm font-mono focus:border-orange-500" />
+                  <label className="text-orange-400 block mb-1 font-bold font-sans">🚚 แก้ไขยอดค่าจัดส่งขนส่งจริง (บาท)</label>
+                  <input type="number" step="0.01" value={editShippingFee} onChange={(e) => setEditShippingFee(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm font-mono focus:border-orange-500 focus:outline-none" />
                 </div>
               )}
 
               {/* 📸 โซนอัปเดต / เพิ่มไฟล์ภาพทีหลังย้อนหลัง */}
-              <div className="border-t border-slate-800 pt-3 mt-1 flex flex-col gap-2.5">
-                <span className="text-amber-500 font-bold block text-[11px]">📸 อัปโหลดเปลี่ยนรูปภาพ / เพิ่มรูปภาพทีหลัง:</span>
+              <div className="border-t border-slate-800 pt-3 mt-1 flex flex-col gap-2.5 font-sans">
+                <span className="text-amber-500 font-bold block text-[11px] font-sans">📸 อัปโหลดเปลี่ยนรูปภาพ / เพิ่มรูปภาพทีหลัง:</span>
                 
                 <div>
-                  <label className="text-slate-400 block mb-1 text-[11px]">เปลี่ยนรูปภาพสินค้าจริง:</label>
-                  <input type="file" accept="image/*" onChange={(e) => setEditProductFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs" />
+                  <label className="text-slate-400 block mb-1 text-[11px] font-sans">เปลี่ยนรูปภาพสินค้าจริง:</label>
+                  <input type="file" accept="image/*" onChange={(e) => setEditProductFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
                 </div>
 
                 <div>
-                  <label className="text-slate-400 block mb-1 text-[11px]">เปลี่ยนรูปสลิปหลักฐานซื้อ (ทุนแท้):</label>
-                  <input type="file" accept="image/*" onChange={(e) => setEditReceiptFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs" />
+                  <label className="text-slate-400 block mb-1 text-[11px] font-sans">เปลี่ยนรูปสลิปหลักฐานซื้อ (ทุนแท้):</label>
+                  <input type="file" accept="image/*" onChange={(e) => setEditReceiptFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
                 </div>
 
                 {editingProduct.name.includes('ขายแล้ว') && (
                   <>
                     <div>
-                      <label className="text-emerald-400 block mb-1 text-[11px]">เปลี่ยนรูปภาพสลิปหลักฐานขายลูกค้า:</label>
-                      <input type="file" accept="image/*" onChange={(e) => setEditSaleProofFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs" />
+                      <label className="text-emerald-400 block mb-1 text-[11px] font-sans">เปลี่ยนรูปภาพสลิปหลักฐานขายลูกค้า:</label>
+                      <input type="file" accept="image/*" onChange={(e) => setEditSaleProofFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
                     </div>
                     <div>
-                      <label className="text-slate-400 block mb-1 text-[11px]">เพิ่ม/เปลี่ยน รูปภาพสลิปค่าจัดส่ง:</label>
-                      <input type="file" accept="image/*" onChange={(e) => setEditSlipFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs" />
+                      <label className="text-slate-400 block mb-1 text-[11px] font-sans">เพิ่ม/เปลี่ยน รูปภาพสลิปค่าจัดส่ง:</label>
+                      <input type="file" accept="image/*" onChange={(e) => setEditSlipFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
                     </div>
                     <div>
-                      <label className="text-slate-400 block mb-1 text-[11px]">เพิ่ม/เปลี่ยน รูปถ่ายสินค้าตอนแพ็กของ:</label>
-                      <input type="file" accept="image/*" onChange={(e) => setEditPackageFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs" />
+                      <label className="text-slate-400 block mb-1 text-[11px] font-sans">เพิ่ม/เปลี่ยน รูปถ่ายสินค้าตอนแพ็กของ:</label>
+                      <input type="file" accept="image/*" onChange={(e) => setEditPackageFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
                     </div>
                   </>
                 )}
               </div>
 
-              <button type="submit" disabled={productMutation.isPending} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-4 rounded-xl shadow-md mt-2 text-sm">
+              <button type="submit" disabled={productMutation.isPending} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-4 rounded-xl shadow-md mt-2 text-sm font-sans transition-colors">
                 {productMutation.isPending ? '⏳ กำลังบันทึกและอัปเดตไฟล์ลงคลัง...' : '✅ ยืนยันและบันทึกการแก้ไขทั้งหมด'}
               </button>
             </form>
