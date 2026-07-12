@@ -52,7 +52,7 @@ export default function HomeMonitor() {
   const [stock, setStock] = useState('1'); 
   const [category, setCategory] = useState('CPU');
 
-  // ฟอร์มแก้ไขสินค้า (เปิดสิทธิ์ให้แก้ไขได้หมดทุกสิ่งอย่าง)
+  // ฟอร์มแก้ไขสินค้า
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editName, setEditName] = useState('');
   const [editSerialNumber, setEditSerialNumber] = useState('');
@@ -165,7 +165,6 @@ export default function HomeMonitor() {
     e.preventDefault();
     setMessage('');
 
-    // 🛑 ตรวจสอบความปลอดภัยฝั่ง Logic (บังคับต้องเลือกไฟล์รูปภาพและรูปสลิปตอนรับเข้า)
     if (!productFile || !receiptFile) {
       alert("❌ กรุณาอัปโหลดรูปภาพสินค้าจริง และ สลิปหลักฐานการซื้อให้ครบถ้วน!");
       return;
@@ -214,18 +213,15 @@ export default function HomeMonitor() {
       const isSold = editingProduct.name.includes('ขายแล้ว');
       let updatedName = '';
       
-      // ดึงลิงก์เดิมหรือตั้งค่าเริ่มต้นจากระบบ RegEx
       const matchReceive = editingProduct.name.match(/รับเข้า: ([\d-]+)/);
       const matchReceipt = editingProduct.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/);
       
       let finalProductImageUrl = editingProduct.image_url;
       let finalBuyReceiptUrl = matchReceipt ? matchReceipt[1] : 'ไม่มีหลักฐานซื้อ';
 
-      // 📸 ตรวจสอบการอัปโหลดรูปสินค้าจริงตัวใหม่ทีหลัง
       if (editProductFile) {
         finalProductImageUrl = await uploadImageToStorage(editProductFile, 'items');
       }
-      // 🧾 ตรวจสอบการอัปโหลดรูปหลักฐานทุนซื้อตัวใหม่ทีหลัง
       if (editReceiptFile) {
         finalBuyReceiptUrl = await uploadImageToStorage(editReceiptFile, 'receipts');
       }
@@ -245,7 +241,6 @@ export default function HomeMonitor() {
         let finalPackageImageUrl = matchPkg ? matchPkg[1] : 'ไม่มีภาพถ่ายเพิ่มเติม';
         const soldDate = matchTime ? matchTime[1] : 'ไม่ระบุ';
 
-        // 📸 ตรวจสอบการเพิ่ม/เปลี่ยน รูปภาพหลักฐานการขาย สลิปส่ง และภาพถ่ายตอนส่งทีหลัง
         if (editSaleProofFile) {
           finalSaleProofUrl = await uploadImageToStorage(editSaleProofFile, 'sales_proofs');
         }
@@ -266,7 +261,6 @@ export default function HomeMonitor() {
         updatedName = `${editName} [รับเข้า: ${originalDate} | หลักฐานซื้อ: ${finalBuyReceiptUrl}]`;
       }
 
-      // ลบแถวเก่าและสลับใส่แถวข้อมูลที่แก้ไขใหม่ทั้งหมด
       await productMutation.mutateAsync({
         url: '/api/products',
         method: 'DELETE',
@@ -290,7 +284,6 @@ export default function HomeMonitor() {
       alert('🎉 บันทึกการอัปเดตแก้ไขข้อมูลและรูปภาพสำเร็จ!');
       setIsEditModalOpen(false);
       setEditingProduct(null);
-      // เคลียร์ไฟล์ค้างสต็อก
       setEditProductFile(null); setEditReceiptFile(null); setEditSaleProofFile(null); setEditSlipFile(null); setEditPackageFile(null);
     } catch (err: any) {
       alert("ข้อผิดพลาด: " + err.message);
@@ -459,8 +452,9 @@ export default function HomeMonitor() {
   let totalStockCostValue = 0; 
   let totalShippingFeeAll = 0; 
 
+  // 🔄 อัปเดตโครงสร้างหมวดหมู่ใหม่: แยก Power Supply, Case และเพิ่ม Cooler
   const categoryCostMap: Record<string, number> = {
-    'CPU': 0, 'GPU': 0, 'Memory': 0, 'Mainboard': 0, 'Storage': 0, 'Power Supply / Case': 0
+    'CPU': 0, 'GPU': 0, 'Memory': 0, 'Mainboard': 0, 'Storage': 0, 'Power Supply': 0, 'Case': 0, 'Cooler': 0
   };
 
   const categoryColors: Record<string, { stroke: string; text: string; bg: string }> = {
@@ -469,7 +463,9 @@ export default function HomeMonitor() {
     'Memory': { stroke: '#ec4899', text: 'text-pink-500', bg: 'bg-pink-500' },
     'Mainboard': { stroke: '#10b981', text: 'text-emerald-500', bg: 'bg-emerald-500' },
     'Storage': { stroke: '#a855f7', text: 'text-purple-500', bg: 'bg-purple-500' },
-    'Power Supply / Case': { stroke: '#eab308', text: 'text-yellow-500', bg: 'bg-yellow-500' }
+    'Power Supply': { stroke: '#eab308', text: 'text-yellow-500', bg: 'bg-yellow-500' },
+    'Case': { stroke: '#64748b', text: 'text-slate-400', bg: 'bg-slate-500' },
+    'Cooler': { stroke: '#06b6d4', text: 'text-cyan-500', bg: 'bg-cyan-500' }
   };
 
   products.forEach((item) => {
@@ -490,7 +486,9 @@ export default function HomeMonitor() {
     'Memory': { sales: 0, profit: 0 },
     'Mainboard': { sales: 0, profit: 0 },
     'Storage': { sales: 0, profit: 0 },
-    'PSU / Case': { sales: 0, profit: 0 }
+    'Power Supply': { sales: 0, profit: 0 },
+    'Case': { sales: 0, profit: 0 },
+    'Cooler': { sales: 0, profit: 0 }
   };
 
   filteredProducts.forEach((item) => {
@@ -585,6 +583,9 @@ export default function HomeMonitor() {
           th { background-color: #f1f5f9 !important; font-weight: bold; text-transform: uppercase; font-size: 10px; }
           .text-right-print { text-align: right !important; font-family: monospace; }
           .bg-total-row { background-color: #f8fafc !important; font-weight: bold; }
+        }
+        input, select, textarea, button {
+          font-family: var(--font-geist-sans), Helvetica, Arial, sans-serif !important;
         }
       `}</style>
 
@@ -706,7 +707,7 @@ export default function HomeMonitor() {
           <div className="text-xs text-slate-400 md:text-right md:col-span-1">กรองพบทั้งหมด <span className="text-orange-400 font-bold text-sm">{filteredProducts.length}</span> ชิ้น</div>
         </div>
 
-        {/* แถบตัวกรอง */}
+        {/* แถบตัวกรองสถานะ */}
         <div className="flex flex-wrap gap-2 bg-[#1e293b] p-3 rounded-xl border border-slate-800 no-print">
           {[
             { id: 'ทั้งหมด', label: '🌐 แสดงทุกสถานะ' },
@@ -717,8 +718,9 @@ export default function HomeMonitor() {
           ))}
         </div>
 
+        {/* แถบตัวกรองหมวดหมู่สินค้า 🔄 อัปเดตเมนู 8 ตัวเลือกใหม่ */}
         <div className="flex flex-wrap gap-2 bg-[#1e293b] p-3 rounded-xl border border-slate-800 no-print">
-          {['ทั้งหมด', 'CPU', 'GPU', 'Memory', 'Mainboard', 'Storage', 'Power Supply / Case'].map((tab) => (
+          {['ทั้งหมด', 'CPU', 'GPU', 'Memory', 'Mainboard', 'Storage', 'Power Supply', 'Case', 'Cooler'].map((tab) => (
             <button key={tab} onClick={() => setSelectedTab(tab)} className={`text-xs font-bold py-2 px-4 rounded-lg transition-all ${selectedTab === tab ? 'bg-orange-600 text-white shadow-md' : 'bg-[#111827] text-slate-400 hover:text-white'}`}>{tab === 'ทั้งหมด' ? '🌐 รวมทุกชนิด' : tab}</button>
           ))}
         </div>
@@ -915,7 +917,7 @@ export default function HomeMonitor() {
                           }} 
                           className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold py-1.5 px-3.5 rounded-lg transition-colors"
                         >
-                          📝 แก้ไขรายการ
+                          📝 แก้ไขทั้งหมด
                         </button>
                         {!isSold && (
                           <button onClick={() => { setSelectedProduct(item); setIsSellModalOpen(true); }} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-4 rounded-lg">💰 บันทึกขายออก</button>
@@ -949,15 +951,15 @@ export default function HomeMonitor() {
                 <input type="text" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="ป้อนหมายเลขซีเรียล..." />
               </div>
               <div>
-                <label className="text-slate-400 block mb-1 font-bold">3. ระบุวันที่รับของ <span className="text-red-400"></span></label>
+                <label className="text-slate-400 block mb-1 font-bold">3. ระบุวันที่รับของ <span className="text-red-400">*</span></label>
                 <input type="date" value={receivedAt} onChange={(e) => setReceivedAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
               </div>
               <div>
-                <label className="text-orange-400 block mb-1 font-bold">4. 📸 เลือกอัปโหลดไฟล์รูปภาพสินค้าจริง <span className="text-red-400">*</span></label>
+                <label className="text-orange-400 block mb-1 font-bold">4. 📸 เลือกอัปโหลดไฟล์รูปภาพสินค้าจริง <span className="text-red-400">* บังคับให้หมด</span></label>
                 <input type="file" accept="image/*" onChange={(e) => setProductFile(e.target.files?.[0] || null)} required className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
               <div>
-                <label className="text-orange-400 block mb-1 font-bold">5. 🧾 อัปโหลดรูปสลิปโอนเงิน / ใบเสร็จหลักฐานการซื้อ <span className="text-red-400">*</span></label>
+                <label className="text-orange-400 block mb-1 font-bold">5. 🧾 อัปโหลดรูปสลิปโอนเงิน / ใบเสร็จหลักฐานการซื้อ <span className="text-red-400">* บังคับให้หมด</span></label>
                 <input type="file" accept="image/*" onChange={(e) => setReceiptFile(e.target.files?.[0] || null)} required className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -968,7 +970,14 @@ export default function HomeMonitor() {
                 <div>
                   <label className="text-slate-400 block mb-1 font-bold">7. ประเภทสินค้า <span className="text-red-400">*</span></label>
                   <select value={category} onChange={(e) => setCategory(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm">
-                    <option value="CPU">CPU</option><option value="GPU">GPU</option><option value="Memory">Memory</option><option value="Mainboard">Mainboard</option><option value="Storage">Storage</option><option value="Power Supply / Case">Power Supply / Case</option>
+                    <option value="CPU">CPU</option>
+                    <option value="GPU">GPU</option>
+                    <option value="Memory">Memory</option>
+                    <option value="Mainboard">Mainboard</option>
+                    <option value="Storage">Storage</option>
+                    <option value="Power Supply">Power Supply</option>
+                    <option value="Case">Case</option>
+                    <option value="Cooler">Cooler</option>
                   </select>
                 </div>
               </div>
@@ -990,7 +999,7 @@ export default function HomeMonitor() {
         </div>
       )}
 
-      {/* 📝 POPUP 3: หน้าต่างแก้ไขสินค้า (อัปเกรดแบบใส่คลาสฟอนต์ทุกช่องอินพุต) */}
+      {/* 📝 POPUP 3: หน้าต่างแก้ไขสินค้า */}
       {isEditModalOpen && editingProduct && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 no-print font-sans">
           <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md max-h-[90vh] overflow-y-auto relative no-scrollbar font-sans">
@@ -1011,7 +1020,14 @@ export default function HomeMonitor() {
                 <div>
                   <label className="text-slate-400 block mb-1 font-bold font-sans">แก้ไขหมวดหมู่</label>
                   <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm font-sans focus:border-amber-500 focus:outline-none">
-                    <option value="CPU">CPU</option><option value="GPU">GPU</option><option value="Memory">Memory</option><option value="Mainboard">Mainboard</option><option value="Storage">Storage</option><option value="Power Supply / Case">Power Supply / Case</option>
+                    <option value="CPU">CPU</option>
+                    <option value="GPU">GPU</option>
+                    <option value="Memory">Memory</option>
+                    <option value="Mainboard">Mainboard</option>
+                    <option value="Storage">Storage</option>
+                    <option value="Power Supply">Power Supply</option>
+                    <option value="Case">Case</option>
+                    <option value="Cooler">Cooler</option>
                   </select>
                 </div>
               </div>
@@ -1041,7 +1057,7 @@ export default function HomeMonitor() {
                 </div>
               )}
 
-              {/* 📸 โซนอัปเดต / เพิ่มไฟล์ภาพทีหลังย้อนหลัง */}
+              {/* 📸 โซนอัปเดตไฟล์ภาพย้อนหลัง */}
               <div className="border-t border-slate-800 pt-3 mt-1 flex flex-col gap-2.5 font-sans">
                 <span className="text-amber-500 font-bold block text-[11px] font-sans">📸 อัปโหลดเปลี่ยนรูปภาพ / เพิ่มรูปภาพทีหลัง:</span>
                 
