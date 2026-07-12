@@ -949,15 +949,15 @@ export default function HomeMonitor() {
                 <input type="text" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="ป้อนหมายเลขซีเรียล..." />
               </div>
               <div>
-                <label className="text-slate-400 block mb-1 font-bold">3. ระบุวันที่รับของ <span className="text-red-400">*</span></label>
+                <label className="text-slate-400 block mb-1 font-bold">3. ระบุวันที่รับของ <span className="text-red-400"></span></label>
                 <input type="date" value={receivedAt} onChange={(e) => setReceivedAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
               </div>
               <div>
-                <label className="text-orange-400 block mb-1 font-bold">4. 📸 เลือกอัปโหลดไฟล์รูปภาพสินค้าจริง <span className="text-red-400">* บังคับให้หมด</span></label>
+                <label className="text-orange-400 block mb-1 font-bold">4. 📸 เลือกอัปโหลดไฟล์รูปภาพสินค้าจริง <span className="text-red-400">*</span></label>
                 <input type="file" accept="image/*" onChange={(e) => setProductFile(e.target.files?.[0] || null)} required className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
               <div>
-                <label className="text-orange-400 block mb-1 font-bold">5. 🧾 อัปโหลดรูปสลิปโอนเงิน / ใบเสร็จหลักฐานการซื้อ <span className="text-red-400">* บังคับให้หมด</span></label>
+                <label className="text-orange-400 block mb-1 font-bold">5. 🧾 อัปโหลดรูปสลิปโอนเงิน / ใบเสร็จหลักฐานการซื้อ <span className="text-red-400">*</span></label>
                 <input type="file" accept="image/*" onChange={(e) => setReceiptFile(e.target.files?.[0] || null)} required className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
               <div className="grid grid-cols-2 gap-3">
