@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx'; 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
+import ProductCard from '../components/ProductCard'; // 🔥 ชิ้นส่วนการ์ดแยกโมดูล
 
 interface Product {
   id?: string;
@@ -39,6 +40,10 @@ export default function HomeMonitor() {
   const [startDate, setStartDate] = useState(''); 
   const [endDate, setEndDate] = useState('');     
   const [selectedStatus, setSelectedStatus] = useState('ทั้งหมด'); 
+
+  // --- ระบบคุมหน้า Pagination (แสดงผลหน้าละ 10 ชิ้น) ---
+  const [stockPage, setStockPage] = useState(1);
+  const [soldPage, setSoldPage] = useState(1);
 
   // --- แหล่งเก็บข้อมูลฟอร์ม ---
   const [message, setMessage] = useState('');
@@ -117,6 +122,12 @@ export default function HomeMonitor() {
   useEffect(() => {
     setHasMounted(true);
   }, []);
+
+  // รีเซ็ตหน้า Pagination ทุกครั้งที่เปลี่ยนตัวกรองหลัก
+  useEffect(() => {
+    setStockPage(1);
+    setSoldPage(1);
+  }, [selectedTab, selectedStatus, startDate, endDate]);
 
   useEffect(() => {
     if (isInputModalOpen) {
@@ -452,7 +463,6 @@ export default function HomeMonitor() {
   let totalStockCostValue = 0; 
   let totalShippingFeeAll = 0; 
 
-  // 🔄 อัปเดตโครงสร้างหมวดหมู่ใหม่: แยก Power Supply, Case และเพิ่ม Cooler
   const categoryCostMap: Record<string, number> = {
     'CPU': 0, 'GPU': 0, 'Memory': 0, 'Mainboard': 0, 'Storage': 0, 'Power Supply': 0, 'Case': 0, 'Cooler': 0
   };
@@ -567,6 +577,10 @@ export default function HomeMonitor() {
   }
 
   const globalLoading = isProductsLoading || productMutation.isPending;
+
+  function setEditThemeFile(arg0: File | null): void {
+    throw new Error('Function not implemented.');
+  }
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-100 p-4 md:p-8">
@@ -707,18 +721,9 @@ export default function HomeMonitor() {
           <div className="text-xs text-slate-400 md:text-right md:col-span-1">กรองพบทั้งหมด <span className="text-orange-400 font-bold text-sm">{filteredProducts.length}</span> ชิ้น</div>
         </div>
 
-        {/* แถบตัวกรองสถานะ */}
-        <div className="flex flex-wrap gap-2 bg-[#1e293b] p-3 rounded-xl border border-slate-800 no-print">
-          {[
-            { id: 'ทั้งหมด', label: '🌐 แสดงทุกสถานะ' },
-            { id: 'อยู่ในสต็อก', label: '🟢 อยู่ในสต็อก (คลังสินค้า)' },
-            { id: 'จำหน่ายแล้ว', label: '🔴 จำหน่ายแล้ว (ปิดดีล)' }
-          ].map((status) => (
-            <button key={status.id} onClick={() => setSelectedStatus(status.id)} className={`text-xs font-bold py-2 px-4 rounded-lg transition-all ${selectedStatus === status.id ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'bg-[#111827] text-slate-400 hover:text-white'}`}>{status.label}</button>
-          ))}
-        </div>
+        
 
-        {/* แถบตัวกรองหมวดหมู่สินค้า 🔄 อัปเดตเมนู 8 ตัวเลือกใหม่ */}
+        {/* แถบตัวกรองหมวดหมู่สินค้า 🔄 โครงสร้าง 8 ตัวเลือกใหม่ */}
         <div className="flex flex-wrap gap-2 bg-[#1e293b] p-3 rounded-xl border border-slate-800 no-print">
           {['ทั้งหมด', 'CPU', 'GPU', 'Memory', 'Mainboard', 'Storage', 'Power Supply', 'Case', 'Cooler'].map((tab) => (
             <button key={tab} onClick={() => setSelectedTab(tab)} className={`text-xs font-bold py-2 px-4 rounded-lg transition-all ${selectedTab === tab ? 'bg-orange-600 text-white shadow-md' : 'bg-[#111827] text-slate-400 hover:text-white'}`}>{tab === 'ทั้งหมด' ? '🌐 รวมทุกชนิด' : tab}</button>
@@ -776,160 +781,192 @@ export default function HomeMonitor() {
           </table>
         </div>
 
-        {/* ตู้โชว์การ์ดสินค้า Monitor บนหน้าเว็บ */}
-        <div className="bg-[#1e293b] p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col gap-4 no-print">
-          <h2 className="font-bold text-slate-300 text-base border-b border-slate-800 pb-3">📦 รายการสต็อกสินค้าและบันทึกประวัติงบการเงิน ({selectedTab} | {selectedStatus})</h2>
+        {/* 🔥 ตู้โชว์สินค้าดีไซน์แยกสัดส่วน + ระบบแบ่งหน้าละ 10 รายการ (Pagination) */}
+        <div className="flex flex-col gap-12 no-print"> {/* gap-12 ช่วยเพิ่มระยะห่างระหว่างบล็อกอย่างสมดุล */}
+          
+          {/* =========================================================
+           * SECTION 1: 🟢 รายการสินค้าอยู่ในสต็อก (คลังสินค้า)
+           * ========================================================= */}
+          <div className="bg-[#1e293b] p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col gap-4">
+            <div className="flex items-center gap-2 border-b border-slate-800 pb-3 mb-2">
+              <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
+              <h2 className="font-bold text-slate-300 text-base">🟢 รายการสินค้าอยู่ในสต็อก / พร้อมจำหน่าย</h2>
+              <span className="text-xs bg-emerald-950 text-emerald-400 font-mono px-2 py-0.5 rounded-md ml-auto">
+                ในคลังทั้งหมด: {filteredProducts.filter(item => !item.name.includes('ขายแล้ว')).length} ชิ้น
+              </span>
+            </div>
 
-          {globalLoading ? (
-            <div className="text-center py-24 text-slate-400 text-sm animate-pulse">⏳ ระบบกำลังประมวลผลข้อมูล Realtime...</div>
-          ) : filteredProducts.length === 0 ? (
-            <div className="text-center py-24 text-slate-500 text-sm">ไม่พบประวัติสินค้าในช่วงนี้</div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 overflow-y-auto max-h-[650px] pb-6 pr-1 no-scrollbar">
-              {filteredProducts.map((item) => {
-                const isSold = item.name.includes('ขายแล้ว');
-                const cost = item.cost || 0;
-                const matchBuyReceipt = item.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/);
-                const buyReceiptUrl = matchBuyReceipt ? matchBuyReceipt[1] : '';
+            {(() => {
+              const stockItems = filteredProducts.filter(item => !item.name.includes('ขายแล้ว'));
+              const itemsPerPage = 9;
+              const totalPages = Math.ceil(stockItems.length / itemsPerPage);
+              
+              const startIndex = (stockPage - 1) * itemsPerPage;
+              const displayedStockItems = stockItems.slice(startIndex, startIndex + itemsPerPage);
 
-                const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
-                const matchComm = item.name.match(/หัก 3% จากกำไร: ฿([\d.]+)/);
-                const matchShip = item.name.match(/ค่าส่ง: ฿([\d.]+)/);
-                const matchProof = item.name.match(/สลิปส่ง: ([^\s|]+)/);
-                const matchPkg = item.name.match(/ภาพส่ง: ([^\s|]+)/);
-                const matchTime = item.name.match(/เมื่อ: ([\d-]+)/);
-                const matchSaleProof = item.name.match(/หลักฐานขาย: ([^\s|]+)/);
+              if (stockItems.length === 0) {
+                return <div className="text-center py-12 text-slate-500 text-xs font-sans">ไม่มีสินค้าพร้อมจำหน่ายในตัวกรองนี้</div>;
+              }
 
-                const sellPrice = matchPrice ? parseFloat(matchPrice[1]) : item.price;
-                const shipFee = matchShip ? parseFloat(matchShip[1]) : 0;
-                const proofUrl = matchProof ? matchProof[1] : '';
-                const pkgUrl = matchPkg ? matchPkg[1] : '';
-                const sellDate = matchTime ? matchTime[1] : 'ไม่ระบุ';
-                const saleProofUrl = matchSaleProof ? matchSaleProof[1] : '';
-                const cleanName = item.name.split(' [')[0];
-                
-                const baseProfit = sellPrice - cost - 30 - shipFee;
-                const commission = matchComm ? parseFloat(matchComm[1]) : (baseProfit > 0 ? baseProfit * 0.03 : 0);
-                const itemNetProfit = baseProfit - commission;
-
-                return (
-                  <div key={item.name} className={`p-4 rounded-xl border flex flex-col justify-between gap-4 transition-all shadow-md ${isSold ? 'bg-[#141b2b]/30 border-slate-900/60 opacity-80' : 'bg-[#111827] border-slate-800 hover:border-slate-700'}`}>
-                    <div className="flex items-start gap-3 min-w-0">
-                      {item.image_url && item.image_url.startsWith('http') ? (
-                        <img src={item.image_url} alt="รูปสินค้า" className="w-16 h-16 rounded-xl object-cover bg-slate-800 shrink-0 border border-slate-800" />
-                      ) : (
-                        <div className="w-16 h-16 rounded-xl bg-slate-800 text-[10px] text-slate-500 flex items-center justify-center text-center p-1 border border-slate-800 shrink-0 font-bold break-all">📦 ไม่มีรูป</div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex justify-between items-center gap-2">
-                          <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-bold uppercase">{item.category}</span>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSold ? 'bg-rose-950/60 text-rose-400' : 'bg-emerald-950 text-emerald-400'}`}>{isSold ? '🔴 จำหน่ายแล้ว' : `🟢 สต็อก (${item.stock} ชิ้น)`}</span>
-                        </div>
-                        <h4 className="font-bold text-white text-sm mt-2 leading-snug break-words">{cleanName}</h4>
-                        <p className="text-[11px] text-slate-400 mt-1 font-mono">S/N: <span className="text-orange-400 font-bold">{item.serial_number || 'ไม่มีรหัส'}</span></p>
-                      </div>
-                    </div>
-
-                    <div className="border-t border-slate-800/80 pt-3 flex flex-col gap-2 bg-[#141b2b] -mx-4 -mb-4 p-4 rounded-b-xl text-xs">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">💵 ต้นทุนรับเข้าสินค้า (ทุนแท้):</span>
-                          <span className="text-slate-200 font-bold">฿{cost.toLocaleString()}</span>
-                        </div>
-                        {buyReceiptUrl && buyReceiptUrl.startsWith('http') && (
-                          <div className="flex justify-between text-[11px] items-center mt-0.5 border-b border-dashed border-slate-800/60 pb-1.5">
-                            <span className="text-slate-500">🧾 หลักฐานสลิปทุนซื้อ:</span>
-                            <a href={buyReceiptUrl} target="_blank" rel="noreferrer" className="text-orange-400 underline font-semibold hover:text-orange-300">🔗 ดูรูปสลิปตอนซื้อ</a>
-                          </div>
-                        )}
-                      </div>
-
-                      {isSold ? (
-                        <div className="flex flex-col gap-1.5 bg-[#0f172a]/60 p-2.5 rounded-lg border border-slate-900 mt-1">
-                          <div className="flex justify-between">
-                            <span className="text-slate-400">💰 ราคาที่ขายได้:</span>
-                            <span className="text-emerald-400 font-black">฿{sellPrice.toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between text-[11px] text-slate-400">
-                            <span>📦 ค่าแพ็กกล่องบรรจุภัณฑ์:</span>
-                            <span>฿30</span>
-                          </div>
-                          <div className="flex justify-between text-[11px]">
-                            <span className="text-slate-500">📦 ค่าจัดส่งจริง:</span>
-                            <span className="text-rose-400">฿{shipFee.toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between text-[11px] border-t border-dashed border-slate-800 pt-1">
-                            <span className="text-slate-500">📊 กำไรก่อนหักนายหน้า:</span>
-                            <span className="text-slate-300">฿{baseProfit.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
-                          </div>
-                          <div className="flex justify-between text-[11px]">
-                            <span className="text-amber-500 font-medium">✂️ หักนายหน้า 3% จากกำไร:</span>
-                            <span className="text-amber-500 font-bold">฿{commission.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
-                          </div>
-                          
-                          <div className="flex justify-between text-[12px] border-t border-solid border-slate-700 pt-1.5 mt-1 bg-orange-950/30 -mx-2.5 px-2.5 py-1 rounded">
-                            <span className="text-orange-400 font-extrabold">🔥 กำไรสุทธิส่วนของคุณ (NET PROFIT):</span>
-                            <span className="text-orange-400 font-black">฿{itemNetProfit.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
-                          </div>
-
-                          {saleProofUrl && saleProofUrl.startsWith('http') && (
-                            <div className="flex justify-between text-[11px] items-center mt-1 pt-1 border-t border-slate-800/40">
-                              <span className="text-emerald-400 font-semibold">🧾 หลักฐานการซื้อขาย/โอนเงิน:</span>
-                              <a href={saleProofUrl} target="_blank" rel="noreferrer" className="text-emerald-400 underline font-semibold hover:text-emerald-300">🔗 ดูรูปสลิปซื้อขาย</a>
-                            </div>
-                          )}
-                          {proofUrl && proofUrl.startsWith('http') && (
-                            <div className="flex justify-between text-[11px] items-center mt-0.5">
-                              <span className="text-slate-500">🧾 สลิปส่งของ:</span>
-                              <a href={proofUrl} target="_blank" rel="noreferrer" className="text-indigo-400 underline font-semibold hover:text-indigo-300">🔗 ดูรูปสลิปค่าส่งของ</a>
-                            </div>
-                          )}
-                          {pkgUrl && pkgUrl.startsWith('http') && (
-                            <div className="flex justify-between text-[11px] items-center mt-0.5">
-                              <span className="text-slate-500">📸 ภาพถ่ายแพ็กของสินค้า:</span>
-                              <a href={pkgUrl} target="_blank" rel="noreferrer" className="text-indigo-400 underline font-semibold hover:text-indigo-300">🔗 ดูรูปสินค้าตอนแพ็ก</a>
-                            </div>
-                          )}
-                          <div className="flex justify-between text-[10px] text-slate-500 mt-1">
-                            <span>📅 วันที่ปิดดีลขาย:</span>
-                            <span className="font-mono">{sellDate}</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">🏷️ ราคาตั้งขาย:</span>
-                          <span className="text-slate-300 font-bold">฿{item.price.toLocaleString()}</span>
-                        </div>
-                      )}
-
-                      <div className="flex gap-2 mt-2 pt-2 border-t border-slate-800/40 justify-end">
-                        <button 
-                          onClick={() => { 
-                            setEditingProduct(item); 
+              return (
+                <div className="flex flex-col gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-2">
+                    {displayedStockItems.map((item) => {
+                      const cleanName = item.name.split(' [')[0];
+                      return (
+                        <ProductCard 
+                          key={item.name}
+                          item={item}
+                          onEdit={(clickedItem) => {
+                            setEditingProduct(clickedItem); 
                             setEditName(cleanName); 
-                            setEditSerialNumber(item.serial_number); 
-                            setEditCost(item.cost.toString());
+                            setEditSerialNumber(clickedItem.serial_number); 
+                            setEditCost(clickedItem.cost.toString());
+                            setEditPrice(clickedItem.price.toString());
+                            setEditCategory(clickedItem.category);
+                            setEditStock(clickedItem.stock.toString());
+                            setEditShippingFee('0');
+                            setIsEditModalOpen(true); 
+                          }}
+                          onSell={(clickedItem) => {
+                            setSelectedProduct(clickedItem); 
+                            setIsSellModalOpen(true);
+                          }}
+                          onDelete={(name) => handleDelete(name)}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  {/* 🔢 แถบควบคุมหน้า Pagination ฝั่งของในคลัง */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-center gap-1.5 pt-4 border-t border-slate-800/60 text-xs font-sans">
+                      <button 
+                        onClick={() => setStockPage(prev => Math.max(prev - 1, 1))}
+                        disabled={stockPage === 1}
+                        className="px-3 py-1.5 rounded-lg bg-[#111827] text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
+                      >
+                        ◀ ก่อนหน้า
+                      </button>
+                      
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                        <button
+                          key={`stock-p-${p}`}
+                          onClick={() => setStockPage(p)}
+                          className={`w-8 h-8 rounded-lg font-bold transition-all ${stockPage === p ? 'bg-orange-600 text-white shadow-md' : 'bg-[#111827] text-slate-400 hover:text-white'}`}
+                        >
+                          {p}
+                        </button>
+                      ))}
+
+                      <button 
+                        onClick={() => setStockPage(prev => Math.min(prev + 1, totalPages))}
+                        disabled={stockPage === totalPages}
+                        className="px-3 py-1.5 rounded-lg bg-[#111827] text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
+                      >
+                        ถัดไป ▶
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* =========================================================
+           * SECTION 2: 🔴 รายการประวัติสินค้าจำหน่ายแล้ว (ปิดดีล)
+           * ========================================================= */}
+          <div className="bg-[#1e293b] p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col gap-4">
+            <div className="flex items-center gap-2 border-b border-slate-800 pb-3 mb-2">
+              <span className="w-3 h-3 rounded-full bg-rose-500" />
+              <h2 className="font-bold text-slate-300 text-base">🔴 ประวัติสินค้าจำหน่ายแล้ว / สรุปงบดุลบัญชี</h2>
+              <span className="text-xs bg-rose-950 text-rose-400 font-mono px-2 py-0.5 rounded-md ml-auto">
+                ขายแล้วทั้งหมด: {filteredProducts.filter(item => item.name.includes('ขายแล้ว')).length} ดีล
+              </span>
+            </div>
+
+            {(() => {
+              const soldItems = filteredProducts.filter(item => item.name.includes('ขายแล้ว'));
+              const itemsPerPage = 9
+              const totalPages = Math.ceil(soldItems.length / itemsPerPage);
+              
+              const startIndex = (soldPage - 1) * itemsPerPage;
+              const displayedSoldItems = soldItems.slice(startIndex, startIndex + itemsPerPage);
+
+              if (soldItems.length === 0) {
+                return <div className="text-center py-12 text-slate-500 text-xs font-sans">ไม่มีประวัติการขายในตัวกรองนี้</div>;
+              }
+
+              return (
+                <div className="flex flex-col gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-2">
+                    {displayedSoldItems.map((item) => {
+                      const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
+                      const sellPrice = matchPrice ? parseFloat(matchPrice[1]) : item.price;
+                      const matchShip = item.name.match(/ค่าส่ง: ฿([\d.]+)/);
+                      const shipFee = matchShip ? parseFloat(matchShip[1]) : 0;
+                      const cleanName = item.name.split(' [')[0];
+
+                      return (
+                        <ProductCard 
+                          key={item.name}
+                          item={item}
+                          onEdit={(clickedItem) => {
+                            setEditingProduct(clickedItem); 
+                            setEditName(cleanName); 
+                            setEditSerialNumber(clickedItem.serial_number); 
+                            setEditCost(clickedItem.cost.toString());
                             setEditPrice(sellPrice.toString());
-                            setEditCategory(item.category);
-                            setEditStock(item.stock.toString());
+                            setEditCategory(clickedItem.category);
+                            setEditStock(clickedItem.stock.toString());
                             setEditShippingFee(shipFee.toString());
                             setIsEditModalOpen(true); 
-                          }} 
-                          className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold py-1.5 px-3.5 rounded-lg transition-colors"
-                        >
-                          📝 แก้ไขทั้งหมด
-                        </button>
-                        {!isSold && (
-                          <button onClick={() => { setSelectedProduct(item); setIsSellModalOpen(true); }} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-4 rounded-lg">💰 บันทึกขายออก</button>
-                        )}
-                        <button onClick={() => handleDelete(item.name)} className="bg-red-950/20 hover:bg-red-600 text-red-400 text-xs font-bold py-1.5 px-3 rounded-lg">🗑️ ลบ</button>
-                      </div>
-                    </div>
+                          }}
+                          onSell={(clickedItem) => {
+                            setSelectedProduct(clickedItem); 
+                            setIsSellModalOpen(true);
+                          }}
+                          onDelete={(name) => handleDelete(name)}
+                        />
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          )}
+
+                  {/* 🔢 แถบควบคุมหน้า Pagination ฝั่งประวัติขายออก */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-center gap-1.5 pt-4 border-t border-slate-800/60 text-xs font-sans">
+                      <button 
+                        onClick={() => setSoldPage(prev => Math.max(prev - 1, 1))}
+                        disabled={soldPage === 1}
+                        className="px-3 py-1.5 rounded-lg bg-[#111827] text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
+                      >
+                        ◀ ก่อนหน้า
+                      </button>
+                      
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                        <button
+                          key={`sold-p-${p}`}
+                          onClick={() => setSoldPage(p)}
+                          className={`w-8 h-8 rounded-lg font-bold transition-all ${soldPage === p ? 'bg-orange-600 text-white shadow-md' : 'bg-[#111827] text-slate-400 hover:text-white'}`}
+                        >
+                          {p}
+                        </button>
+                      ))}
+
+                      <button 
+                        onClick={() => setSoldPage(prev => Math.min(prev + 1, totalPages))}
+                        disabled={soldPage === totalPages}
+                        className="px-3 py-1.5 rounded-lg bg-[#111827] text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
+                      >
+                        ถัดไป ▶
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
         </div>
 
       </div>
@@ -951,15 +988,15 @@ export default function HomeMonitor() {
                 <input type="text" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="ป้อนหมายเลขซีเรียล..." />
               </div>
               <div>
-                <label className="text-slate-400 block mb-1 font-bold">3. ระบุวันที่รับของ <span className="text-red-400">*</span></label>
+                <label className="text-slate-400 block mb-1 font-bold">3. ระบุวันที่รับของ <span className="text-red-400">*</span> </label>
                 <input type="date" value={receivedAt} onChange={(e) => setReceivedAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" />
               </div>
               <div>
-                <label className="text-orange-400 block mb-1 font-bold">4. 📸 เลือกอัปโหลดไฟล์รูปภาพสินค้าจริง <span className="text-red-400">* บังคับให้หมด</span></label>
+                <label className="text-orange-400 block mb-1 font-bold">4. 📸 เลือกอัปโหลดไฟล์รูปภาพสินค้าจริง <span className="text-red-400">*</span></label>
                 <input type="file" accept="image/*" onChange={(e) => setProductFile(e.target.files?.[0] || null)} required className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
               <div>
-                <label className="text-orange-400 block mb-1 font-bold">5. 🧾 อัปโหลดรูปสลิปโอนเงิน / ใบเสร็จหลักฐานการซื้อ <span className="text-red-400">* บังคับให้หมด</span></label>
+                <label className="text-orange-400 block mb-1 font-bold">5. 🧾 อัปโหลดรูปสลิปโอนเงิน / ใบเสร็จหลักฐานการซื้อ <span className="text-red-400">*</span></label>
                 <input type="file" accept="image/*" onChange={(e) => setReceiptFile(e.target.files?.[0] || null)} required className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -999,7 +1036,7 @@ export default function HomeMonitor() {
         </div>
       )}
 
-      {/* 📝 POPUP 3: หน้าต่างแก้ไขสินค้า */}
+      {/* 📝 POPUP 3: หน้าต่างแก้ไขสินค้า (ปรับปรุงซ่อนช่องอัปโหลดรูปต้นทางเมื่อสินค้าขายแล้ว) */}
       {isEditModalOpen && editingProduct && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 no-print font-sans">
           <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md max-h-[90vh] overflow-y-auto relative no-scrollbar font-sans">
@@ -1061,16 +1098,22 @@ export default function HomeMonitor() {
               <div className="border-t border-slate-800 pt-3 mt-1 flex flex-col gap-2.5 font-sans">
                 <span className="text-amber-500 font-bold block text-[11px] font-sans">📸 อัปโหลดเปลี่ยนรูปภาพ / เพิ่มรูปภาพทีหลัง:</span>
                 
-                <div>
-                  <label className="text-slate-400 block mb-1 text-[11px] font-sans">เปลี่ยนรูปภาพสินค้าจริง:</label>
-                  <input type="file" accept="image/*" onChange={(e) => setEditProductFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
-                </div>
+                {/* 🟢 แสดงช่องอัปโหลดรูปภาพสินค้าจริงและรูปหลักฐานซื้อ เฉพาะตอนที่สินค้า "ยังไม่ขาย" เท่านั้น */}
+                {!editingProduct.name.includes('ขายแล้ว') && (
+                  <>
+                    <div>
+                      <label className="text-slate-400 block mb-1 text-[11px] font-sans">เปลี่ยนรูปภาพสินค้าจริง:</label>
+                      <input type="file" accept="image/*" onChange={(e) => setEditProductFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
+                    </div>
 
-                <div>
-                  <label className="text-slate-400 block mb-1 text-[11px] font-sans">เปลี่ยนรูปสลิปหลักฐานซื้อ (ทุนแท้):</label>
-                  <input type="file" accept="image/*" onChange={(e) => setEditReceiptFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
-                </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1 text-[11px] font-sans">เปลี่ยนรูปสลิปหลักฐานซื้อ (ทุนแท้):</label>
+                      <input type="file" accept="image/*" onChange={(e) => setEditReceiptFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
+                    </div>
+                  </>
+                )}
 
+                {/* 🔴 แสดงเฉพาะช่องจัดการไฟล์ฝั่งขาออกย้อนหลัง เมื่อสถานะสินค้าขึ้นว่า "ขายแล้ว" */}
                 {editingProduct.name.includes('ขายแล้ว') && (
                   <>
                     <div>
@@ -1079,7 +1122,7 @@ export default function HomeMonitor() {
                     </div>
                     <div>
                       <label className="text-slate-400 block mb-1 text-[11px] font-sans">เพิ่ม/เปลี่ยน รูปภาพสลิปค่าจัดส่ง:</label>
-                      <input type="file" accept="image/*" onChange={(e) => setEditSlipFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
+                      <input type="file" accept="image/*" onChange={(e) => setEditThemeFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs font-sans focus:outline-none" />
                     </div>
                     <div>
                       <label className="text-slate-400 block mb-1 text-[11px] font-sans">เพิ่ม/เปลี่ยน รูปถ่ายสินค้าตอนแพ็กของ:</label>
