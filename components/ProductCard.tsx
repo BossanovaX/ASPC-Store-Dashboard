@@ -2,7 +2,6 @@
 
 import React from 'react';
 
-// กำหนดประเภทข้อมูลที่การ์ดใบนี้ต้องการดึงไปใช้
 interface Product {
   name: string;
   cost: number;
@@ -18,13 +17,13 @@ interface ProductCardProps {
   onEdit: (item: Product) => void;
   onSell: (item: Product) => void;
   onDelete: (name: string) => void;
+  onPreviewImage?: (url: string) => void; // 🔥 เพิ่ม Props สำหรับส่ง URL รูปไปขยาย
 }
 
-export default function ProductCard({ item, onEdit, onSell, onDelete }: ProductCardProps) {
+export default function ProductCard({ item, onEdit, onSell, onDelete, onPreviewImage }: ProductCardProps) {
   const isSold = item.name.includes('ขายแล้ว');
   const cost = item.cost || 0;
   
-  // ระบบถอดรหัส String จาก Database เพื่อนำลิงก์รูปและค่าทางบัญชีมาโชว์
   const matchBuyReceipt = item.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/);
   const buyReceiptUrl = matchBuyReceipt ? matchBuyReceipt[1] : '';
 
@@ -52,7 +51,8 @@ export default function ProductCard({ item, onEdit, onSell, onDelete }: ProductC
     <div className={`p-4 rounded-xl border flex flex-col justify-between gap-4 transition-all shadow-md ${isSold ? 'bg-[#141b2b]/30 border-slate-900/60 opacity-80' : 'bg-[#111827] border-slate-800 hover:border-slate-700'}`}>
       <div className="flex items-start gap-3 min-w-0">
         {item.image_url && item.image_url.startsWith('http') ? (
-          <img src={item.image_url} alt="รูปสินค้า" className="w-16 h-16 rounded-xl object-cover bg-slate-800 shrink-0 border border-slate-800" />
+          // 🔥 กดที่รูปสินค้าก็ขยายได้เหมือนกัน
+          <img src={item.image_url} alt="รูปสินค้า" onClick={() => onPreviewImage && onPreviewImage(item.image_url)} className="w-16 h-16 rounded-xl object-cover bg-slate-800 shrink-0 border border-slate-800 cursor-pointer hover:opacity-80 transition-opacity" />
         ) : (
           <div className="w-16 h-16 rounded-xl bg-slate-800 text-[10px] text-slate-500 flex items-center justify-center text-center p-1 border border-slate-800 shrink-0 font-bold break-all">📦 ไม่มีรูป</div>
         )}
@@ -75,7 +75,7 @@ export default function ProductCard({ item, onEdit, onSell, onDelete }: ProductC
           {buyReceiptUrl && buyReceiptUrl.startsWith('http') && (
             <div className="flex justify-between text-[11px] items-center mt-0.5 border-b border-dashed border-slate-800/60 pb-1.5">
               <span className="text-slate-500">🧾 หลักฐานสลิปทุนซื้อ:</span>
-              <a href={buyReceiptUrl} target="_blank" rel="noreferrer" className="text-orange-400 underline font-semibold hover:text-orange-300">🔗 ดูรูปสลิปตอนซื้อ</a>
+              <button type="button" onClick={() => onPreviewImage && onPreviewImage(buyReceiptUrl)} className="text-orange-400 underline font-semibold hover:text-orange-300 cursor-pointer">🔗 ดูรูปสลิปตอนซื้อ</button>
             </div>
           )}
         </div>
@@ -111,19 +111,19 @@ export default function ProductCard({ item, onEdit, onSell, onDelete }: ProductC
             {saleProofUrl && saleProofUrl.startsWith('http') && (
               <div className="flex justify-between text-[11px] items-center mt-1 pt-1 border-t border-slate-800/40">
                 <span className="text-emerald-400 font-semibold">🧾 หลักฐานการซื้อขาย/โอนเงิน:</span>
-                <a href={saleProofUrl} target="_blank" rel="noreferrer" className="text-emerald-400 underline font-semibold hover:text-emerald-300">🔗 ดูรูปสลิปซื้อขาย</a>
+                <button type="button" onClick={() => onPreviewImage && onPreviewImage(saleProofUrl)} className="text-emerald-400 underline font-semibold hover:text-emerald-300 cursor-pointer">🔗 ดูรูปสลิปซื้อขาย</button>
               </div>
             )}
             {proofUrl && proofUrl.startsWith('http') && (
               <div className="flex justify-between text-[11px] items-center mt-0.5">
                 <span className="text-slate-500">🧾 สลิปส่งของ:</span>
-                <a href={proofUrl} target="_blank" rel="noreferrer" className="text-indigo-400 underline font-semibold hover:text-indigo-300">🔗 ดูรูปสลิปค่าส่งของ</a>
+                <button type="button" onClick={() => onPreviewImage && onPreviewImage(proofUrl)} className="text-indigo-400 underline font-semibold hover:text-indigo-300 cursor-pointer">🔗 ดูรูปสลิปค่าส่งของ</button>
               </div>
             )}
             {pkgUrl && pkgUrl.startsWith('http') && (
               <div className="flex justify-between text-[11px] items-center mt-0.5">
                 <span className="text-slate-500">📸 ภาพถ่ายแพ็กของสินค้า:</span>
-                <a href={pkgUrl} target="_blank" rel="noreferrer" className="text-indigo-400 underline font-semibold hover:text-indigo-300">🔗 ดูรูปสินค้าตอนแพ็ก</a>
+                <button type="button" onClick={() => onPreviewImage && onPreviewImage(pkgUrl)} className="text-indigo-400 underline font-semibold hover:text-indigo-300 cursor-pointer">🔗 ดูรูปสินค้าตอนแพ็ก</button>
               </div>
             )}
             <div className="flex justify-between text-[10px] text-slate-500 mt-1">
@@ -139,24 +139,15 @@ export default function ProductCard({ item, onEdit, onSell, onDelete }: ProductC
         )}
 
         <div className="flex gap-2 mt-2 pt-2 border-t border-slate-800/40 justify-end">
-          <button 
-            onClick={() => onEdit(item)} 
-            className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold py-1.5 px-3.5 rounded-lg transition-colors"
-          >
+          <button onClick={() => onEdit(item)} className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold py-1.5 px-3.5 rounded-lg transition-colors">
             📝 แก้ไขรายการ
           </button>
           {!isSold && (
-            <button 
-              onClick={() => onSell(item)} 
-              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-4 rounded-lg"
-            >
+            <button onClick={() => onSell(item)} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-4 rounded-lg">
               💰 บันทึกขายออก
             </button>
           )}
-          <button 
-            onClick={() => onDelete(item.name)} 
-            className="bg-red-950/20 hover:bg-red-600 text-red-400 text-xs font-bold py-1.5 px-3 rounded-lg"
-          >
+          <button onClick={() => onDelete(item.name)} className="bg-red-950/20 hover:bg-red-600 text-red-400 text-xs font-bold py-1.5 px-3 rounded-lg">
             🗑️ ลบ
           </button>
         </div>
