@@ -453,7 +453,7 @@ export default function HomeMonitor() {
       </div>
 
       {/* 🟩 MAIN CONTENT AREA (พื้นที่แสดงผลด้านขวา) */}
-      <div className="main-content flex-1 flex flex-col h-screen overflow-hidden relative">
+      <div className="main-content flex-1 flex flex-col h-screen overflow-hidden pb-20 relative">
         
         {/* TOP HEADER */}
         <header className="h-16 bg-[#0f172a]/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between px-6 shrink-0 z-10 no-print">
@@ -931,7 +931,20 @@ export default function HomeMonitor() {
           </div>
         </div>
       )}
-
+{/* 📱 MOBILE BOTTOM NAV (เฉพาะมือถือ) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#111827] border-t border-slate-800 flex justify-around p-2 z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.3)]">
+        {[
+          { id: 'dashboard', label: '📊' },
+          { id: 'stock', label: '📦' },
+          { id: 'sold', label: '🛒' },
+          { id: 'reports', label: '📄' }
+        ].map(menu => (
+          <button key={menu.id} onClick={() => setActiveMenu(menu.id)} 
+            className={`p-3 rounded-xl flex flex-col items-center justify-center text-xl transition-all ${activeMenu === menu.id ? 'text-orange-500 scale-110' : 'text-slate-500'}`}>
+            {menu.label}
+          </button>
+        ))}
+      </div>
       </div>
   );
 }
