@@ -24,6 +24,7 @@ export default function HomeMonitor() {
 
   // --- แถบเมนู Sidebar (สลับหน้าจอ) ---
   const [activeMenu, setActiveMenu] = useState('dashboard'); // dashboard, stock, sold, reports
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // 👈 แทรกบรรทัดนี้เพิ่มเข้าไปครับ
 
   const [hasMounted, setHasMounted] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -35,6 +36,11 @@ export default function HomeMonitor() {
   const [isSellModalOpen, setIsSellModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false); 
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+
+  // --- Delete Popup ---
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [deleteSuccessMessage, setDeleteSuccessMessage] = useState('');
 
   // --- 🟢 1. ระบบควบคุมการกรองฝั่งสินค้าอยู่ในสต็อก (Stock Filters) ---
   const [stockTab, setStockTab] = useState('ทั้งหมด');
@@ -111,6 +117,7 @@ export default function HomeMonitor() {
     },
     enabled: isLoggedIn,
     staleTime: 1000 * 60 * 5, 
+    refetchInterval: 1000 * 10, // 👈 แทรกเพิ่มตรงนี้! (สั่งให้ดึงข้อมูลใหม่ทุกๆ 10 วินาทีอัตโนมัติ)
   });
 
   const productMutation = useMutation({
@@ -246,10 +253,24 @@ export default function HomeMonitor() {
     } catch (err: any) { alert("เกิดข้อผิดพลาด: " + err.message); }
   };
 
-  const handleDelete = async (productName: string) => {
-    if (!confirm(`ต้องการลบ "${productName}" ใช่ไหม?`)) return;
-    try { await productMutation.mutateAsync({ url: '/api/products', method: 'DELETE', body: { name: productName } }); } 
-    catch (err) { console.error(err); }
+  const handleDelete = async (product: Product) => {
+    try {
+      setDeleteSuccessMessage('⏳ กำลังลบข้อมูลออกจากระบบ...');
+      await productMutation.mutateAsync({ url: '/api/products', method: 'DELETE', body: { name: product.name } });
+      
+      setDeleteSuccessMessage('🎉 ลบข้อมูลสำเร็จ!');
+      // สั่งรีเฟรชสเตตข้อมูลของ TanStack Query หน้าบ้านทันที ข้อมูลจะอัปเดตโดยไม่ต้องรีโหลดหรือล็อกอินใหม่
+      queryClient.invalidateQueries({ queryKey: ['products'] }); 
+      
+      setTimeout(() => {
+        setIsDeleteModalOpen(false);
+        setProductToDelete(null);
+        setDeleteSuccessMessage('');
+      }, 1200);
+    } catch (err: any) {
+      alert("เกิดข้อผิดพลาดในการลบ: " + err.message);
+      setDeleteSuccessMessage('');
+    }
   };
 
   // --- Logic Computations ---
@@ -390,35 +411,67 @@ export default function HomeMonitor() {
       <style jsx global>{`
         /* 🔥 ชุดโค้ด CSS สำหรับระบบ Print PDF แก้บั๊กแบบปลดล็อกกรอบ */
         @media print {
-          @page { size: A4 landscape; margin: 10mm; }
-          body, html { background-color: #ffffff !important; color: #000000 !important; height: auto !important; overflow: visible !important; }
-          .no-print, .sidebar, header { display: none !important; }
-          
-          /* 🔥 ปลดล็อกความสูงและ Scrollbar ของทุก Container ให้กระดาษไหลลงมาได้หลายหน้า */
-          .app-root, .main-content, .scroll-container, .max-w-7xl { 
-            display: block !important; 
-            overflow: visible !important; 
-            height: auto !important; 
-            min-height: auto !important; 
-            width: 100% !important; 
-            position: static !important;
-            padding: 0 !important;
-            margin: 0 !important;
-          }
-          
-          .print-report-header { display: block !important; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
-          .print-table-container { display: block !important; width: 100% !important; margin-top: 15px; }
-          
-          /* 🔥 ให้ตารางข้ามหน้าได้แบบไม่ถูกตัดกลาง */
-          table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; color: #000 !important; page-break-inside: auto; }
-          tr { page-break-inside: avoid; page-break-after: auto; }
-          thead { display: table-header-group; }
-          tfoot { display: table-footer-group; }
-          th, td { border: 1px solid #666 !important; padding: 8px 10px; text-align: left; }
-          th { background-color: #f1f5f9 !important; font-weight: bold; font-size: 10px; }
-          .text-right-print { text-align: right !important; font-family: monospace; }
-          .bg-total-row { background-color: #f8fafc !important; font-weight: bold; }
-        }
+          @media print {
+  @page { size: A4 landscape; margin: 10mm; }
+  
+  /* บังคับล้างสีพื้นหลังและสีตัวอักษรหลักให้เป็น ขาว-ดำ เด็ดขาด */
+  body, html, .app-root, .main-content, .scroll-container, .max-w-7xl { 
+    background: #ffffff !important; 
+    color: #000000 !important; 
+    height: auto !important; 
+    overflow: visible !important;
+    display: block !important; 
+    position: static !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  .no-print, .sidebar, header, .md\:hidden { display: none !important; }
+  
+  .print-report-header { 
+    display: block !important; 
+    margin-bottom: 20px; 
+    border-bottom: 2px solid #000000 !important; 
+    padding-bottom: 10px; 
+    color: #000000 !important;
+  }
+  
+  .print-table-container { 
+    display: block !important; 
+    width: 100% !important; 
+    margin-top: 15px; 
+    background: #ffffff !important;
+  }
+  
+  /* จัดการสไตล์ตารางให้เป็นสีขาวและเส้นขอบชัดเจน */
+  table { 
+    width: 100% !important; 
+    border-collapse: collapse !important; 
+    margin-top: 10px !important; 
+    font-size: 11px !important; 
+    background: #ffffff !important;
+    color: #000000 !important;
+    page-break-inside: auto; 
+  }
+  tr { page-break-inside: avoid; page-break-after: auto; }
+  thead { display: table-header-group; }
+  
+  /* บังคับสีตัวอักษรและเส้นขอบของช่องตาราง */
+  th, td { 
+    border: 1px solid #333333 !important; 
+    padding: 8px 10px !important; 
+    text-align: left !important;
+    color: #000000 !important;
+    background: transparent !important;
+  }
+  th { 
+    background-color: #f1f5f9 !important; 
+    font-weight: bold !important; 
+    color: #000000 !important;
+  }
+  .text-right-print { text-align: right !important; font-family: monospace; }
+  .bg-total-row { background-color: #f8fafc !important; font-weight: bold !important; }
+}
       `}</style>
 
       {/* 🟦 SIDEBAR (แถบเมนูด้านซ้าย) */}
@@ -458,6 +511,13 @@ export default function HomeMonitor() {
         {/* TOP HEADER */}
         <header className="h-16 bg-[#0f172a]/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between px-6 shrink-0 z-10 no-print">
           <div className="flex items-center gap-4">
+            {/* ปุ่มเปิดเมนูด้านข้าง แสดงเฉพาะบนมือถือ */}
+            <button 
+              onClick={() => setIsMobileMenuOpen(true)} 
+              className="md:hidden text-white text-xl p-2 hover:bg-slate-800 rounded-xl transition-all"
+            >
+              ☰
+            </button>
             <h2 className="text-lg font-black text-white hidden sm:block">
               {activeMenu === 'dashboard' && 'ภาพรวมระบบ (Dashboard)'}
               {activeMenu === 'stock' && 'คลังสินค้าและสต็อก (Inventory)'}
@@ -604,7 +664,7 @@ export default function HomeMonitor() {
                               onPreviewImage={setPreviewImageUrl} 
                               onEdit={(cItem) => { setEditingProduct(cItem); setEditName(cleanName); setEditSerialNumber(cItem.serial_number); setEditCost(cItem.cost.toString()); setEditPrice(cItem.price.toString()); setEditCategory(cItem.category); setEditStock(cItem.stock.toString()); setEditShippingFee('0'); setIsEditModalOpen(true); }}
                               onSell={(cItem) => { setSelectedProduct(cItem); setIsSellModalOpen(true); }}
-                              onDelete={(name) => handleDelete(name)} />
+                              onDelete={() => { setProductToDelete(item); setIsDeleteModalOpen(true); }} />
                           );
                         })}
                       </div>
@@ -678,7 +738,7 @@ export default function HomeMonitor() {
                               onPreviewImage={setPreviewImageUrl} 
                               onEdit={(cItem) => { setEditingProduct(cItem); setEditName(cleanName); setEditSerialNumber(cItem.serial_number); setEditCost(cItem.cost.toString()); setEditPrice(sellPrice.toString()); setEditCategory(cItem.category); setEditStock(cItem.stock.toString()); setEditShippingFee(shipFee.toString()); setIsEditModalOpen(true); }}
                               onSell={(cItem) => { setSelectedProduct(cItem); setIsSellModalOpen(true); }}
-                              onDelete={(name) => handleDelete(name)} />
+                              onDelete={() => { setProductToDelete(item); setIsDeleteModalOpen(true); }} />
                           );
                         })}
                       </div>
@@ -931,20 +991,143 @@ export default function HomeMonitor() {
           </div>
         </div>
       )}
-{/* 📱 MOBILE BOTTOM NAV (เฉพาะมือถือ) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#111827] border-t border-slate-800 flex justify-around p-2 z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.3)]">
-        {[
-          { id: 'dashboard', label: '📊' },
-          { id: 'stock', label: '📦' },
-          { id: 'sold', label: '🛒' },
-          { id: 'reports', label: '📄' }
-        ].map(menu => (
-          <button key={menu.id} onClick={() => setActiveMenu(menu.id)} 
-            className={`p-3 rounded-xl flex flex-col items-center justify-center text-xl transition-all ${activeMenu === menu.id ? 'text-orange-500 scale-110' : 'text-slate-500'}`}>
-            {menu.label}
-          </button>
-        ))}
-      </div>
-      </div>
+
+{/* 🗑️ POPUP 4: หน้าต่างยืนยันการลบสินค้าและแจ้งเตือนลบสำเร็จ */}
+      {isDeleteModalOpen && productToDelete && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 no-print">
+          <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md relative animate-in zoom-in-95 duration-200">
+            
+            <h2 className="font-bold text-rose-500 text-base border-b border-slate-800 pb-2 flex items-center gap-2">
+              🚨 ยืนยันการลบข้อมูลสินค้า
+            </h2>
+
+            {/* ส่วนกล่องข้อความสถานะเมื่อลบสำเร็จ */}
+            {deleteSuccessMessage ? (
+              <div className="p-4 rounded-xl text-center text-sm font-bold bg-rose-950/40 text-rose-400 border border-rose-900/50 my-2 animate-pulse">
+                {deleteSuccessMessage}
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-slate-400">คุณแน่ใจใช่ไหมว่าต้องการลบสินค้าชิ้นนี้ออกจากฐานข้อมูล? เมื่อลบแล้วจะไม่สามารถกู้คืนได้</p>
+                
+                {/* กล่องแสดงรายละเอียดสินค้าแกะจาก Metadata */}
+                <div className="bg-[#111827] p-4 rounded-xl border border-slate-800 flex flex-col gap-2.5 text-xs font-sans">
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">📦 ชื่อสินค้า:</span>
+                    <span className="text-white font-bold text-sm">{productToDelete.name.split(' [')[0]}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 border-t border-slate-800/60 pt-2">
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase font-bold">🔢 Serial Number (S/N):</span>
+                      <span className="text-amber-400 font-mono font-bold">{productToDelete.serial_number || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase font-bold">📅 วันที่ลงข้อมูล:</span>
+                      <span className="text-slate-300 font-mono">
+                        {productToDelete.name.includes('ขายแล้ว') 
+                          ? (productToDelete.name.match(/เมื่อ: ([\d-]+)/)?.[1] || 'ไม่ระบุ')
+                          : (productToDelete.name.match(/รับเข้า: ([\d-]+)/)?.[1] || 'ไม่ระบุ')
+                        }
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ปุ่มกดยืนยันการทำงาน */}
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="button" 
+                    onClick={() => { setIsDeleteModalOpen(false); setProductToDelete(null); }}
+                    className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl text-xs transition-colors"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => handleDelete(productToDelete)}
+                    className="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-md shadow-rose-900/20"
+                  >
+                    💥 ยืนยันลบข้อมูล
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+{/* 📱 MOBILE SIDEBAR DRAWER (เมนูสไลด์ด้านข้างสำหรับมือถือ) */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-[60] no-print">
+          {/* Backdrop พื้นหลังสีดำโปร่งแสง กดแล้วจะปิดเมนู */}
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+          
+          {/* ตัวกล่องเมนูที่สไลด์ออกมาจากซ้าย */}
+          <div className="fixed inset-y-0 left-0 w-64 bg-[#1e293b] p-5 shadow-2xl flex flex-col justify-between border-r border-slate-800 animate-in slide-in-from-left duration-200">
+            <div>
+              {/* ส่วนหัวของเมนูด้านข้าง */}
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-orange-600 text-white flex items-center justify-center font-black text-lg">A</div>
+                  <div>
+                    <h1 className="font-bold text-sm text-white">ASPC Manager</h1>
+                    <p className="text-[10px] text-slate-400">เมนูเลือกหมวดหมู่</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsMobileMenuOpen(false)} 
+                  className="text-slate-400 hover:text-white bg-slate-800 w-7 h-7 flex items-center justify-center rounded-full"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* รายการเมนูสไลด์เลือกหน้าจอ */}
+              <nav className="flex flex-col gap-2">
+                {[
+                  { id: 'dashboard', label: '📊 ภาพรวม (Dashboard)' },
+                  { id: 'stock', label: '📦 คลังสินค้า (Stock)' },
+                  { id: 'sold', label: '🛒 ประวัติขาย (Sold)' },
+                  { id: 'reports', label: '📄 ออกรายงาน (Reports)' }
+                ].map(menu => (
+                  <button 
+                    key={menu.id} 
+                    onClick={() => {
+                      setActiveMenu(menu.id);
+                      setIsMobileMenuOpen(false); // คลิกแล้วให้ปิดเมนูสไลด์อัตโนมัติ
+                    }} 
+                    className={`flex items-center w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 
+                    ${activeMenu === menu.id ? 'bg-orange-600 text-white shadow-md' : 'text-slate-400 hover:bg-[#111827] hover:text-slate-200'}`}
+                  >
+                    {menu.label}
+                  </button>
+                ))}
+              </nav>
+            </div>
+
+            {/* ส่วนท้ายของเมนูสไลด์ */}
+            <div className="border-t border-slate-800 pt-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-emerald-400 font-bold">🟢 Admin Online</span>
+                <button 
+                  onClick={() => { 
+                    setIsLoggedIn(false); 
+                    setPassword(''); 
+                    setIsMobileMenuOpen(false);
+                  }} 
+                  className="text-[11px] text-rose-400 font-bold px-2 py-1 rounded bg-slate-800 border border-slate-700"
+                >
+                  ออกระบบ
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
+  
