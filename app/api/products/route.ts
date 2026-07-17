@@ -1,30 +1,64 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '../../../lib/supabase';
 
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     
-    // บังคับส่งเฉพาะ 7 คอลัมน์ที่มีอยู่จริงบนหน้าเว็บ Supabase ของคุณเป๊ะๆ ห้ามมีส่วนเกิน
-    const { data, error } = await supabase.from('products').insert([
-      {
-        name: body.name,
-        cost: body.cost,
-        price: body.price,
-        stock: body.stock,
-        serial_number: body.serial_number,
-        category: body.category,
-        image_url: body.image_url
-      }
-    ]);
+    // 1. ดึงค่าจากหน้าบ้าน
+    const { 
+      name, cost, price, stock, serial_number, category, image_url,
+      is_sold, received_at, buy_receipt_url,
+      sold_at, sold_price, shipping_fee, commission_fee,
+      sale_proof_url, shipping_slip_url, package_image_url
+    } = body;
+
+    // 2. จัดระเบียบข้อมูลและเคลียร์ประเภทข้อมูลดักไว้ก่อนบันทึก
+    const insertData = {
+      name: name || 'ไม่มีชื่อสินค้า',
+      cost: cost ? parseFloat(cost) : 0,
+      price: price ? parseFloat(price) : 0,
+      stock: stock ? parseInt(stock) : 1,
+      serial_number: serial_number || '',
+      category: category || 'CPU',
+      image_url: image_url || '',
+      is_sold: is_sold === true || is_sold === 'true',
+      
+      // ล้างค่าว่างเปล่าให้เป็น null หรือ undefined เพื่อป้องกันเรื่อง Schema Cache
+      received_at: received_at && received_at.trim() !== '' ? received_at : null,
+      buy_receipt_url: buy_receipt_url && buy_receipt_url.trim() !== '' ? buy_receipt_url : null,
+      
+      sold_at: sold_at && sold_at.trim() !== '' ? sold_at : null,
+      sold_price: sold_price && sold_price !== '' ? parseFloat(sold_price) : null,
+      shipping_fee: shipping_fee && shipping_fee !== '' ? parseFloat(shipping_fee) : null,
+      commission_fee: commission_fee && commission_fee !== '' ? parseFloat(commission_fee) : null,
+      
+      sale_proof_url: sale_proof_url && sale_proof_url.trim() !== '' ? sale_proof_url : null,
+      shipping_slip_url: shipping_slip_url && shipping_slip_url.trim() !== '' ? shipping_slip_url : null,
+      package_image_url: package_image_url && package_image_url.trim() !== '' ? package_image_url : null,
+    };
+
+    // 3. ปรับโครงสร้างคำสั่งยิงเข้า Supabase แบบล้าง Array ซ้อนครอบส่งตรง (เสถียรที่สุด)
+    const { data, error } = await supabase
+      .from('products')
+      .insert(insertData); // 👈 ตัดการต่อท้ายด้วย .select() ออกชั่วคราว เพื่อเลี่ยงปัญหารีเซ็ต Schema Cache หน้าบ้าน
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      console.error("Supabase Database Insert Error:", error.message);
+      throw new Error(error.message);
     }
-
-    return NextResponse.json({ success: true, data });
+    
+    return new Response(JSON.stringify({ success: true, data }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error("API Error 500 Details:", err.message);
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 }
 

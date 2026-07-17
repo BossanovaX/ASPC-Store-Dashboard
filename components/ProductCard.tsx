@@ -1,8 +1,7 @@
 'use client';
 
-import React from 'react';
-
 interface Product {
+  id?: string;
   name: string;
   cost: number;
   price: number;
@@ -10,147 +9,247 @@ interface Product {
   serial_number: string;
   category: string;
   image_url: string;
+  is_sold: boolean;
+  received_at: string;
+  buy_receipt_url: string;
+  sold_at?: string | null;
+  sold_price?: number | null;
+  shipping_fee?: number | null;
+  commission_fee?: number | null;
+  sale_proof_url?: string | null;
+  shipping_slip_url?: string | null;
+  package_image_url?: string | null;
 }
 
 interface ProductCardProps {
   item: Product;
+  onPreviewImage: (url: string) => void;
   onEdit: (item: Product) => void;
   onSell: (item: Product) => void;
-  onDelete: (name: string) => void;
-  onPreviewImage?: (url: string) => void; // 🔥 เพิ่ม Props สำหรับส่ง URL รูปไปขยาย
+  onDelete: (item: Product) => void;
 }
 
-export default function ProductCard({ item, onEdit, onSell, onDelete, onPreviewImage }: ProductCardProps) {
-  const isSold = item.name.includes('ขายแล้ว');
-  const cost = item.cost || 0;
+export default function ProductCard({
+  item,
+  onPreviewImage,
+  onEdit,
+  onSell,
+  onDelete
+}: ProductCardProps) {
   
+  const isSold = item.is_sold === true || item.name.includes('ขายแล้ว');
+  const cleanName = item.name.split(' [')[0];
+
+  // =========================================================
+  // 💡 ระบบ FALLBACK DATA (ผูกกับตัวแปรใหม่ และรองรับ Regex แบบเก่า)
+  // =========================================================
+  const matchReceive = item.name.match(/รับเข้า: ([\d-]+)/);
+  const receiveDate = item.received_at || (matchReceive ? matchReceive[1] : 'ไม่ระบุ');
+
+  const matchSell = item.name.match(/เมื่อ: ([\d-]+)/);
+  const soldDate = item.sold_at || (matchSell ? matchSell[1] : 'ไม่ระบุ');
+
   const matchBuyReceipt = item.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/);
-  const buyReceiptUrl = matchBuyReceipt ? matchBuyReceipt[1] : '';
+  const buyReceiptUrl = item.buy_receipt_url || (matchBuyReceipt ? matchBuyReceipt[1] : null);
+
+  const matchSaleProof = item.name.match(/หลักฐานขาย: ([^\s|]+)/);
+  const saleProofUrl = item.sale_proof_url || (matchSaleProof ? matchSaleProof[1] : null);
+
+  const matchShippingSlip = item.name.match(/สลิปส่ง: ([^\s|]+)/);
+  const shippingSlipUrl = item.shipping_slip_url || (matchShippingSlip ? matchShippingSlip[1] : null);
+
+  const matchPackageImage = item.name.match(/ภาพส่ง: ([^\s|]+)/);
+  const packageImageUrl = item.package_image_url || (matchPackageImage ? matchPackageImage[1] : null);
 
   const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
-  const matchComm = item.name.match(/หัก 3% จากกำไร: ฿([\d.]+)/);
-  const matchShip = item.name.match(/ค่าส่ง: ฿([\d.]+)/);
-  const matchProof = item.name.match(/สลิปส่ง: ([^\s|]+)/);
-  const matchPkg = item.name.match(/ภาพส่ง: ([^\s|]+)/);
-  const matchTime = item.name.match(/เมื่อ: ([\d-]+)/);
-  const matchSaleProof = item.name.match(/หลักฐานขาย: ([^\s|]+)/);
+  const displaySoldPrice = item.sold_price ?? parseFloat(matchPrice ? matchPrice[1] : '0');
 
-  const sellPrice = matchPrice ? parseFloat(matchPrice[1]) : item.price;
-  const shipFee = matchShip ? parseFloat(matchShip[1]) : 0;
-  const proofUrl = matchProof ? matchProof[1] : '';
-  const pkgUrl = matchPkg ? matchPkg[1] : '';
-  const sellDate = matchTime ? matchTime[1] : 'ไม่ระบุ';
-  const saleProofUrl = matchSaleProof ? matchSaleProof[1] : '';
-  const cleanName = item.name.split(' [')[0];
-  
-  const baseProfit = sellPrice - cost - 30 - shipFee;
-  const commission = matchComm ? parseFloat(matchComm[1]) : (baseProfit > 0 ? baseProfit * 0.03 : 0);
-  const itemNetProfit = baseProfit - commission;
+  const matchShip = item.name.match(/ค่าส่ง: ฿([\d.]+)/);
+  const displayShippingFee = item.shipping_fee ?? parseFloat(matchShip ? matchShip[1] : '0');
+
+  // คำนวณกำไรตาม Logic ดั้งเดิมของการ์ด
+  const packFee = 30;
+  const baseProfit = displaySoldPrice - item.cost - packFee - displayShippingFee;
+  const displayCommission = item.commission_fee ?? (baseProfit > 0 ? baseProfit * 0.03 : 0);
+  const netProfit = baseProfit - displayCommission;
+
+  // สีตามหมวดหมู่ชิ้นส่วน
+  const categoryColors: Record<string, string> = {
+    CPU: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+    GPU: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+    Memory: 'bg-pink-500/10 text-pink-400 border-pink-500/20',
+    Mainboard: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    Storage: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+    'Power Supply': 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+    Case: 'bg-slate-400/10 text-slate-300 border-slate-400/20',
+    Cooler: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+  };
 
   return (
-    <div className={`p-4 rounded-xl border flex flex-col justify-between gap-4 transition-all shadow-md ${isSold ? 'bg-[#141b2b]/30 border-slate-900/60 opacity-80' : 'bg-[#111827] border-slate-800 hover:border-slate-700'}`}>
-      <div className="flex items-start gap-3 min-w-0">
-        {item.image_url && item.image_url.startsWith('http') ? (
-          // 🔥 กดที่รูปสินค้าก็ขยายได้เหมือนกัน
-          <img src={item.image_url} alt="รูปสินค้า" onClick={() => onPreviewImage && onPreviewImage(item.image_url)} className="w-16 h-16 rounded-xl object-cover bg-slate-800 shrink-0 border border-slate-800 cursor-pointer hover:opacity-80 transition-opacity" />
-        ) : (
-          <div className="w-16 h-16 rounded-xl bg-slate-800 text-[10px] text-slate-500 flex items-center justify-center text-center p-1 border border-slate-800 shrink-0 font-bold break-all">📦 ไม่มีรูป</div>
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="flex justify-between items-center gap-2">
-            <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-bold uppercase">{item.category}</span>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSold ? 'bg-rose-950/60 text-rose-400' : 'bg-emerald-950 text-emerald-400'}`}>{isSold ? '🔴 จำหน่ายแล้ว' : `🟢 สต็อก (${item.stock} ชิ้น)`}</span>
+    <div className="bg-[#1e293b] rounded-2xl border border-slate-800/80 p-4 shadow-lg hover:shadow-2xl hover:border-slate-700/60 transition-all flex flex-col justify-between gap-4 font-sans text-xs">
+      
+      {/* ส่วนหัวภาพสินค้าและรายละเอียดพื้นฐาน */}
+      <div className="flex gap-4">
+        <div className="w-24 h-24 rounded-xl overflow-hidden bg-[#111827] border border-slate-800 shrink-0 relative">
+          <img 
+            src={item.image_url || 'https://via.placeholder.com/150'} 
+            alt={cleanName} 
+            className="w-full h-full object-cover"
+          />
+        </div>
+        
+        <div className="flex-1 min-w-0 flex flex-col gap-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${categoryColors[item.category] || 'bg-slate-500/10 text-slate-400'}`}>
+              {item.category}
+            </span>
+            <span className={`flex items-center gap-1.5 font-bold text-[10px] ${isSold ? 'text-rose-400 bg-rose-950/40 px-2 py-0.5 rounded-md' : 'text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded-md'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isSold ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
+              {isSold ? 'จำหน่ายแล้ว' : `สต็อก (${item.stock} ชิ้น)`}
+            </span>
           </div>
-          <h4 className="font-bold text-white text-sm mt-2 leading-snug break-words">{cleanName}</h4>
-          <p className="text-[11px] text-slate-400 mt-1 font-mono">S/N: <span className="text-orange-400 font-bold">{item.serial_number || 'ไม่มีรหัส'}</span></p>
+          
+          <h4 className="font-bold text-slate-100 text-sm truncate mt-1" title={cleanName}>
+            {cleanName}
+          </h4>
+          <p className="text-[11px] text-slate-400 font-mono">
+            S/N: <span className="text-amber-400 font-bold">{item.serial_number || '-'}</span>
+          </p>
+          <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+            📅 รับเข้า: {receiveDate}
+          </p>
         </div>
       </div>
 
-      <div className="border-t border-slate-800/80 pt-3 flex flex-col gap-2 bg-[#141b2b] -mx-4 -mb-4 p-4 rounded-b-xl text-xs">
-        <div className="flex flex-col gap-1">
-          <div className="flex justify-between">
-            <span className="text-slate-400">💵 ต้นทุนรับเข้าสินค้า (ทุนแท้):</span>
-            <span className="text-slate-200 font-bold">฿{cost.toLocaleString()}</span>
-          </div>
-          {buyReceiptUrl && buyReceiptUrl.startsWith('http') && (
-            <div className="flex justify-between text-[11px] items-center mt-0.5 border-b border-dashed border-slate-800/60 pb-1.5">
-              <span className="text-slate-500">🧾 หลักฐานสลิปทุนซื้อ:</span>
-              <button type="button" onClick={() => onPreviewImage && onPreviewImage(buyReceiptUrl)} className="text-orange-400 underline font-semibold hover:text-orange-300 cursor-pointer">🔗 ดูรูปสลิปตอนซื้อ</button>
-            </div>
-          )}
+      {/* 💵 ส่วนข้อมูลทางการเงินดีไซน์เดิม */}
+      <div className="flex flex-col gap-2 font-sans bg-[#111827]/40 p-3 rounded-xl border border-slate-800/40">
+        
+        {/* แถวทุนสินค้า */}
+        <div className="flex justify-between items-center text-slate-400">
+          <span className="flex items-center gap-1">🟩 ต้นทุนรับเข้าสินค้า (ทุนแท้):</span>
+          <span className="font-mono font-bold text-slate-200">฿{item.cost.toLocaleString()}</span>
         </div>
 
-        {isSold ? (
-          <div className="flex flex-col gap-1.5 bg-[#0f172a]/60 p-2.5 rounded-lg border border-slate-900 mt-1">
-            <div className="flex justify-between">
-              <span className="text-slate-400">💰 ราคาที่ขายได้:</span>
-              <span className="text-emerald-400 font-black">฿{sellPrice.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between text-[11px] text-slate-400">
-              <span>📦 ค่าแพ็กกล่องบรรจุภัณฑ์:</span>
-              <span>฿30</span>
-            </div>
-            <div className="flex justify-between text-[11px]">
-              <span className="text-slate-500">📦 ค่าจัดส่งจริง:</span>
-              <span className="text-rose-400">฿{shipFee.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between text-[11px] border-t border-dashed border-slate-800 pt-1">
-              <span className="text-slate-500">📊 กำไรก่อนหักนายหน้า:</span>
-              <span className="text-slate-300">฿{baseProfit.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
-            </div>
-            <div className="flex justify-between text-[11px]">
-              <span className="text-amber-500 font-medium">✂️ หักนายหน้า 3% จากกำไร:</span>
-              <span className="text-amber-500 font-bold">฿{commission.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
-            </div>
-            
-            <div className="flex justify-between text-[12px] border-t border-solid border-slate-700 pt-1.5 mt-1 bg-orange-950/30 -mx-2.5 px-2.5 py-1 rounded">
-              <span className="text-orange-400 font-extrabold">🔥 กำไรสุทธิส่วนของคุณ (NET PROFIT):</span>
-              <span className="text-orange-400 font-black">฿{itemNetProfit.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
-            </div>
-
-            {saleProofUrl && saleProofUrl.startsWith('http') && (
-              <div className="flex justify-between text-[11px] items-center mt-1 pt-1 border-t border-slate-800/40">
-                <span className="text-emerald-400 font-semibold">🧾 หลักฐานการซื้อขาย/โอนเงิน:</span>
-                <button type="button" onClick={() => onPreviewImage && onPreviewImage(saleProofUrl)} className="text-emerald-400 underline font-semibold hover:text-emerald-300 cursor-pointer">🔗 ดูรูปสลิปซื้อขาย</button>
-              </div>
-            )}
-            {proofUrl && proofUrl.startsWith('http') && (
-              <div className="flex justify-between text-[11px] items-center mt-0.5">
-                <span className="text-slate-500">🧾 สลิปส่งของ:</span>
-                <button type="button" onClick={() => onPreviewImage && onPreviewImage(proofUrl)} className="text-indigo-400 underline font-semibold hover:text-indigo-300 cursor-pointer">🔗 ดูรูปสลิปค่าส่งของ</button>
-              </div>
-            )}
-            {pkgUrl && pkgUrl.startsWith('http') && (
-              <div className="flex justify-between text-[11px] items-center mt-0.5">
-                <span className="text-slate-500">📸 ภาพถ่ายแพ็กของสินค้า:</span>
-                <button type="button" onClick={() => onPreviewImage && onPreviewImage(pkgUrl)} className="text-indigo-400 underline font-semibold hover:text-indigo-300 cursor-pointer">🔗 ดูรูปสินค้าตอนแพ็ก</button>
-              </div>
-            )}
-            <div className="flex justify-between text-[10px] text-slate-500 mt-1">
-              <span>📅 วันที่ปิดดีลขาย:</span>
-              <span className="font-mono">{sellDate}</span>
-            </div>
-          </div>
-        ) : (
-          <div className="flex justify-between">
-            <span className="text-slate-400">🏷️ ราคาตั้งขาย:</span>
-            <span className="text-slate-300 font-bold">฿{item.price.toLocaleString()}</span>
+        {/* ลิงก์รูปสลิปทุน */}
+        {buyReceiptUrl && buyReceiptUrl !== 'ไม่มีหลักฐานซื้อ' && (
+          <div className="flex justify-between items-center text-[11px]">
+            <span className="text-slate-500 flex items-center gap-1">📄 หลักฐานสลิปทุนซื้อ:</span>
+            <button 
+              type="button"
+              onClick={() => onPreviewImage(buyReceiptUrl)}
+              className="text-amber-500 hover:text-amber-400 font-bold transition-colors underline cursor-pointer flex items-center gap-1"
+            >
+              🔗 ดูรูปสลิปตอนซื้อ
+            </button>
           </div>
         )}
 
-        <div className="flex gap-2 mt-2 pt-2 border-t border-slate-800/40 justify-end">
-          <button onClick={() => onEdit(item)} className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold py-1.5 px-3.5 rounded-lg transition-colors">
-            📝 แก้ไขรายการ
+        {isSold ? (
+          /* =========================================================
+           * 🔴 CASE: สินค้าที่จำหน่ายแล้ว (เพิ่มมิติการจัดแถวลิ้งค์รูปภาพสไตล์เดิม)
+           * ========================================================= */
+          <div className="flex flex-col gap-2 border-t border-slate-800/80 pt-2 mt-1">
+            <div className="flex justify-between items-center text-slate-400">
+              <span className="flex items-center gap-1">💡 ราคาที่ขายได้:</span>
+              <span className="font-mono font-bold text-emerald-400">฿{displaySoldPrice.toLocaleString()}</span>
+            </div>
+
+            <div className="flex justify-between items-center text-slate-400">
+              <span className="flex items-center gap-1">📦 ค่าแพ็คกล่องบรรจุภัณฑ์:</span>
+              <span className="font-mono text-slate-400">฿{packFee}</span>
+            </div>
+
+            <div className="flex justify-between items-center text-slate-400">
+              <span className="flex items-center gap-1">📦 ค่าจัดส่งจริง:</span>
+              <span className="font-mono text-rose-400">฿{displayShippingFee.toLocaleString()}</span>
+            </div>
+
+            <div className="flex justify-between items-center text-slate-500 text-[11px] border-t border-dashed border-slate-800/60 pt-1.5">
+              <span>📊 กำไรก่อนหักนายหน้า:</span>
+              <span className="font-mono">฿{Math.max(0, baseProfit).toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
+            </div>
+
+            <div className="flex justify-between items-center text-slate-400">
+              <span className="flex items-center gap-1 text-rose-400">✂️ หักนายหน้า 3% จากกำไร:</span>
+              <span className="font-mono text-amber-500">฿{displayCommission.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
+            </div>
+
+            {/* แถบไฮไลท์ส้มสำหรับ NET PROFIT */}
+            <div className="bg-orange-600/10 border border-orange-500/20 p-2 rounded-xl flex justify-between items-center my-1">
+              <span className="text-orange-400 font-bold flex items-center gap-1">🔥 กำไรสุทธิส่วนของคุณ (NET PROFIT):</span>
+              <span className="font-mono font-black text-orange-400 text-sm">฿{Math.max(0, netProfit).toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
+            </div>
+
+            {/* 🔗 จัดระเบียบแถวรูปหลักฐานต่าง ๆ ให้มีมิติเป็นแถวสวยงามเหมือนต้นฉบับ */}
+            <div className="flex justify-between items-center text-slate-400 border-t border-slate-800/80 pt-2 text-[11px]">
+              <span className="text-slate-400 flex items-center gap-1">📄 หลักฐานการซื้อขาย/โอนเงิน:</span>
+              {saleProofUrl && saleProofUrl !== 'ไม่มีหลักฐาน' ? (
+                <button type="button" onClick={() => onPreviewImage(saleProofUrl)} className="text-emerald-400 font-bold hover:underline flex items-center gap-0.5 cursor-pointer">🔗 ดูรูปสลิปซื้อขาย</button>
+              ) : <span className="text-slate-600">ไม่มีหลักฐาน</span>}
+            </div>
+
+            {/* แสดงแถว สลิปค่าส่ง (ถ้ามีข้อมูล) */}
+            {shippingSlipUrl && shippingSlipUrl !== 'ไม่มีหลักฐาน' && (
+              <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                <span className="text-slate-400 flex items-center gap-1">📄 หลักฐานสลิปค่าส่งสินค้า:</span>
+                <button type="button" onClick={() => onPreviewImage(shippingSlipUrl)} className="text-cyan-400 font-bold hover:underline flex items-center gap-0.5 cursor-pointer">🔗 ดูสลิปค่าส่ง</button>
+              </div>
+            )}
+
+            {/* แสดงแถว ภาพถ่ายแพ็กของส่ง (ถ้ามีข้อมูล) */}
+            {packageImageUrl && packageImageUrl !== 'ไม่มีภาพถ่ายเพิ่มเติม' && (
+              <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                <span className="text-slate-400 flex items-center gap-1">📄 ภาพถ่ายสินค้าตอนแพ็กของ:</span>
+                <button type="button" onClick={() => onPreviewImage(packageImageUrl)} className="text-purple-400 font-bold hover:underline flex items-center gap-0.5 cursor-pointer">🔗 ดูภาพแพ็กของ</button>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono mt-1 border-t border-slate-800/40 pt-1.5">
+              <span>📅 วันที่ปิดดีลขาย:</span>
+              <span>{soldDate}</span>
+            </div>
+          </div>
+        ) : (
+          /* =========================================================
+           * 🟢 CASE: สินค้าที่พร้อมจำหน่ายในสต็อก
+           * ========================================================= */
+          <div className="flex justify-between items-center border-t border-slate-800/80 pt-2 mt-1 text-slate-400">
+            <span className="text-slate-400">✨ ราคาตั้งขายไว้:</span>
+            <span className="font-mono font-black text-amber-400 text-sm">฿{item.price.toLocaleString()}</span>
+          </div>
+        )}
+      </div>
+
+      {/* 🎮 กลุ่มปุ่มกดควบคุม Action ต่างๆ ด้านล่างสุดของการ์ด (ปรับดีไซน์ให้ตรงตามรูปภาพชิดขวา) */}
+      <div className="flex gap-2 justify-end pt-2 border-t border-slate-800/40 mt-1">
+        
+        <button
+          type="button"
+          onClick={() => onEdit(item)}
+          className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white py-1.5 px-4 rounded-xl font-bold text-[11px] transition-all flex items-center gap-1.5 shadow-md shadow-orange-950/20 cursor-pointer"
+        >
+          📄 แก้ไขรายการ
+        </button>
+        
+        {!isSold && (
+          <button
+            type="button"
+            onClick={() => onSell(item)}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 px-4 rounded-xl font-bold text-[11px] transition-all shadow-md shadow-emerald-900/10 flex items-center gap-1 cursor-pointer"
+          >
+            💰 บันทึกขายออก
           </button>
-          {!isSold && (
-            <button onClick={() => onSell(item)} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-4 rounded-lg">
-              💰 บันทึกขายออก
-            </button>
-          )}
-          <button onClick={() => onDelete(item.name)} className="bg-red-950/20 hover:bg-red-600 text-red-400 text-xs font-bold py-1.5 px-3 rounded-lg">
-            🗑️ ลบ
-          </button>
-        </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => onDelete(item)}
+          className="text-rose-400/80 hover:text-rose-400 hover:bg-rose-950/30 px-3 py-1.5 rounded-xl transition-all font-bold flex items-center gap-1 text-[11px] cursor-pointer"
+          title="ลบสินค้า"
+        >
+          🗑️ ลบ
+        </button>
+        
       </div>
     </div>
   );

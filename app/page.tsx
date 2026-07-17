@@ -17,6 +17,17 @@ interface Product {
   category: string;
   image_url: string;
   is_sold?: boolean;
+
+  // ➕ แทรกคอลัมน์ใหม่เหล่านี้เพิ่มเข้าไปใน Interface ของ page.tsx ด้วยครับ
+  received_at?: string | null;
+  buy_receipt_url?: string | null;
+  sold_at?: string | null;
+  sold_price?: number | null;
+  shipping_fee?: number | null;
+  commission_fee?: number | null;
+  sale_proof_url?: string | null;
+  shipping_slip_url?: string | null;
+  package_image_url?: string | null;
 }
 
 export default function HomeMonitor() {
@@ -41,6 +52,8 @@ export default function HomeMonitor() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [deleteSuccessMessage, setDeleteSuccessMessage] = useState('');
+
+  const [sellSuccessMessage, setSellSuccessMessage] = useState('');
 
   // --- 🟢 1. ระบบควบคุมการกรองฝั่งสินค้าอยู่ในสต็อก (Stock Filters) ---
   const [stockTab, setStockTab] = useState('ทั้งหมด');
@@ -234,23 +247,68 @@ export default function HomeMonitor() {
     e.preventDefault(); if (!selectedProduct) return;
     if (!saleProofFile) { alert("❌ บังคับอัปโหลดหลักฐานซื้อขาย!"); return; }
     try {
+      setSellSuccessMessage('⏳ กำลังอัปโหลดภาพและเซฟงบลง Database...');
+      
       let saleProofUrl = await uploadImageToStorage(saleProofFile, 'sales_proofs');
-      let slipUrl = slipFile ? await uploadImageToStorage(slipFile, 'slips') : 'ไม่มีหลักฐาน';
-      let packageUrl = packageFile ? await uploadImageToStorage(packageFile, 'packages') : 'ไม่มีภาพถ่ายเพิ่มเติม';
+      let slipUrl = slipFile ? await uploadImageToStorage(slipFile, 'slips') : null;
+      let packageUrl = packageFile ? await uploadImageToStorage(packageFile, 'packages') : null;
 
-      const sPrice = parseFloat(soldPrice) || 0; const sFee = parseFloat(shippingFee) || 0; const packFee = 30;
+      const sPrice = parseFloat(soldPrice) || 0; 
+      const sFee = parseFloat(shippingFee) || 0; 
+      const packFee = 30;
       const baseProfit = sPrice - selectedProduct.cost - packFee - sFee;
       const commission = baseProfit > 0 ? baseProfit * 0.03 : 0;
 
-      const matchBuyReceipt = selectedProduct.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/);
-      const originalBuyReceipt = matchBuyReceipt ? matchBuyReceipt[1] : 'ไม่มีหลักฐานซื้อ';
       const cleanBaseName = selectedProduct.name.split(' [')[0];
-      const soldName = `${cleanBaseName} [หลักฐานซื้อ: ${originalBuyReceipt}] [🔴 ขายแล้ว ฿${sPrice} | หัก 3% จากกำไร: ฿${commission.toFixed(2)} | ค่าส่ง: ฿${sFee} | หลักฐานขาย: ${saleProofUrl} | สลิปส่ง: ${slipUrl} | ภาพส่ง: ${packageUrl} | เมื่อ: ${soldAt}]`;
 
+      // 1. ลบแถวสินค้าเดิมที่เคยอยู่ในสต็อก
       await productMutation.mutateAsync({ url: '/api/products', method: 'DELETE', body: { name: selectedProduct.name } });
-      await productMutation.mutateAsync({ url: '/api/products', method: 'POST', body: { name: soldName, cost: selectedProduct.cost, price: sPrice, stock: 0, serial_number: selectedProduct.serial_number, category: selectedProduct.category, image_url: selectedProduct.image_url } });
-      alert('🎉 ปิดยอดขายสำเร็จ!'); setSoldPrice(''); setShippingFee(''); setSaleProofFile(null); setSlipFile(null); setPackageFile(null); setIsSellModalOpen(false);
-    } catch (err: any) { alert("เกิดข้อผิดพลาด: " + err.message); }
+      
+      // บันทึกข้อมูลสินค้าปิดดีลตัวใหม่เข้าคอลัมน์ตรงๆ
+      await productMutation.mutateAsync({ 
+        url: '/api/products', 
+        method: 'POST', 
+        body: { 
+          name: cleanBaseName, 
+          cost: selectedProduct.cost, 
+          price: selectedProduct.price,
+          stock: 0, 
+          serial_number: selectedProduct.serial_number, 
+          category: selectedProduct.category, 
+          image_url: selectedProduct.image_url,
+          is_sold: true,
+          sold_at: soldAt,
+          sold_price: sPrice,
+          shipping_fee: sFee,
+          commission_fee: commission,
+          sale_proof_url: saleProofUrl,
+          shipping_slip_url: slipUrl,
+          package_image_url: packageUrl,
+          
+          // ➕ ดึงลิงก์รูปภาพสลิปทุนซื้อของเดิมติดไปด้วย ป้องกันสลิปทุนหาย!
+          buy_receipt_url: selectedProduct.buy_receipt_url || selectedProduct.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/)?.[1] || null,
+          received_at: selectedProduct.received_at || selectedProduct.name.match(/รับเข้า: ([\d-]+)/)?.[1] || null
+        } 
+      });
+
+      // 3. แจ้งเตือนสถานะสำเร็จและสั่งรีเฟรชสเตตข้อมูลหน้าบ้านแบบเร่งด่วนทันที!
+      setSellSuccessMessage('🎉 ปิดยอดขายและบันทึกหลักฐานสำเร็จ!');
+      queryClient.invalidateQueries({ queryKey: ['products'] }); 
+      
+      setTimeout(() => {
+        setSoldPrice(''); 
+        setShippingFee(''); 
+        setSaleProofFile(null); 
+        setSlipFile(null); 
+        setPackageFile(null); 
+        setIsSellModalOpen(false);
+        setSellSuccessMessage('');
+      }, 1500);
+
+    } catch (err: any) { 
+      alert("เกิดข้อผิดพลาด: " + err.message); 
+      setSellSuccessMessage('');
+    }
   };
 
   const handleDelete = async (product: Product) => {
@@ -298,7 +356,10 @@ export default function HomeMonitor() {
   });
 
   const soldFilteredProducts = products.filter((item) => {
-    if (!item.name.includes('ขายแล้ว')) return false; 
+    // 💡 ปลดล็อกเงื่อนไข: ตรวจจับทั้งชื่อสูตรเก่า และคอลัมน์ is_sold แบบใหม่ให้เห็นพร้อมกัน
+    const isItemSold = item.is_sold === true || item.name.includes('ขายแล้ว');
+    if (!isItemSold) return false; 
+    
     if (soldTab !== 'ทั้งหมด' && item.category !== soldTab) return false;
 
     const cleanName = item.name.split(' [')[0].toLowerCase();
@@ -306,15 +367,21 @@ export default function HomeMonitor() {
     if (soldSearchQuery && !cleanName.includes(sQuery) && !(item.serial_number || '').toLowerCase().includes(sQuery)) return false;
 
     const matchSell = item.name.match(/เมื่อ: ([\d-]+)/);
-    const itemDate = matchSell ? matchSell[1] : '';
+    const itemDate = item.sold_at || (matchSell ? matchSell[1] : '');
     if (soldStartDate && itemDate && itemDate < soldStartDate) return false;
     if (soldEndDate && itemDate && itemDate > soldEndDate) return false;
     return true;
   }).sort((a, b) => {
-    const dateA = a.name.match(/เมื่อ: ([\d-]+)/)?.[1] || '';
-    const dateB = b.name.match(/เมื่อ: ([\d-]+)/)?.[1] || '';
-    const priceA = parseFloat(a.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0');
-    const priceB = parseFloat(b.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0');
+    const matchA = a.name.match(/เมื่อ: ([\d-]+)/);
+    const matchB = b.name.match(/เมื่อ: ([\d-]+)/);
+    const dateA = a.sold_at || (matchA ? matchA[1] : '');
+    const dateB = b.sold_at || (matchB ? matchB[1] : '');
+    
+    const matchPriceA = a.name.match(/ขายแล้ว ฿([\d.]+)/);
+    const matchPriceB = b.name.match(/ขายแล้ว ฿([\d.]+)/);
+    const priceA = a.sold_price ?? parseFloat(matchPriceA ? matchPriceA[1] : '0');
+    const priceB = b.sold_price ?? parseFloat(matchPriceB ? matchPriceB[1] : '0');
+    
     if (soldSortBy === 'date-desc') return dateB.localeCompare(dateA);
     if (soldSortBy === 'date-asc') return dateA.localeCompare(dateB);
     if (soldSortBy === 'price-desc') return priceB - priceA;
@@ -335,19 +402,39 @@ export default function HomeMonitor() {
 
   const exportToExcelFromPanel = () => {
     if (reportFilteredProducts.length === 0) { alert('❌ ไม่พบข้อมูล!'); return; }
+    
     const reportData = reportFilteredProducts.map((item, index) => {
-      const isSold = item.name.includes('ขายแล้ว');
+      // 💡 ปลดล็อกดักจับสถานะขายทั้งคอลัมน์ใหม่ และข้อความในชื่อสูตรเก่า
+      const isSold = item.is_sold === true || item.name.includes('ขายแล้ว');
       const cleanName = item.name.split(' [')[0];
-      const sellPrice = isSold ? parseFloat(item.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0') : item.price;
-      const shipFee = isSold ? parseFloat(item.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0') : 0;
-      const commission = isSold ? parseFloat(item.name.match(/หัก 3% จากกำไร: ฿([\d.]+)/)?.[1] || '0') : 0;
-      const netProfit = isSold ? (sellPrice - item.cost - 30 - shipFee - commission) : 0;
+      const cost = item.cost || 0;
+      
+      // ดึงค่ายอดขายปิดดีล
+      const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
+      const sellPrice = item.sold_price ?? parseFloat(matchPrice ? matchPrice[1] : '0');
+      
+      // ดึงค่าขนส่ง
+      const matchShip = item.name.match(/ค่าส่ง: ฿([\d.]+)/);
+      const shipFee = item.shipping_fee ?? parseFloat(matchShip ? matchShip[1] : '0');
+      
+      // คำนวณค่านายหน้าและกำไรสุทธิ
+      const packFee = 30;
+      const baseProfit = sellPrice - cost - packFee - shipFee;
+      const commission = item.commission_fee ?? (baseProfit > 0 ? baseProfit * 0.03 : 0);
+      const netProfit = baseProfit - commission;
+
       return {
-        'ลำดับ': index + 1, 'ชื่อสินค้า': cleanName, 'S/N': item.serial_number || '-', 'หมวดหมู่': item.category,
-        'สถานะ': isSold ? 'ขายแล้ว' : `สต็อก`, 'ทุน (บาท)': item.cost, 'ยอดขาย (บาท)': isSold ? sellPrice : '-',
+        'ลำดับ': index + 1,
+        'ชื่อสินค้า': cleanName,
+        'S/N': item.serial_number || '-',
+        'หมวดหมู่': item.category,
+        'สถานะ': isSold ? 'ขายแล้ว' : 'สต็อก',
+        'ทุน (บาท)': cost,
+        'ยอดขาย (บาท)': isSold ? sellPrice : '-',
         'กำไรสุทธิ (บาท)': isSold ? Math.max(0, netProfit) : '-'
       };
     });
+
     const worksheet = XLSX.utils.json_to_sheet(reportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'ERP_Report');
@@ -578,37 +665,79 @@ export default function HomeMonitor() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 bg-[#1e293b] p-6 rounded-2xl border border-slate-800 shadow-xl items-center">
-                  <div className="flex justify-center items-center lg:col-span-1 h-56 relative w-full border-r border-slate-800/60 pr-4">
-                    {totalStockCostValue > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie data={donutData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={3} dataKey="value">
-                            {donutData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                          </Pie>
-                          <Tooltip formatter={((value: any, name: any) => [`฿${Number(value).toLocaleString()}`, name]) as any} contentStyle={{ backgroundColor: '#111827', borderColor: '#334155', borderRadius: '12px', fontSize: '12px', color: '#fff' }} />
-                        </PieChart>
+                {/* 📊 ส่วนแสดงผลกราฟสถิติแบบจัดเรียงบน-ล่าง (ปรับปรุงใหม่ตามคำแนะนำ) */}
+                <div className="flex flex-col gap-6 no-print">
+                  
+                  {/* แถวที่ 1: กราฟแท่งแสดงยอดขายและกำไรสุทธิ ขยายไซส์เต็มหน้าจอ Full Width */}
+                  <div className="bg-[#1e293b] p-6 rounded-2xl border border-slate-800 shadow-xl w-full flex flex-col justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">📊 สรุปงบรายรับและกำไรสุทธิแยกตามหมวด</h4>
+                      <p className="text-[11px] text-slate-500 mb-4">เปรียบเทียบยอดขายรวมและกำไรสุทธิที่หักค่าใช้จ่ายทั้งหมดแล้วในแต่ละหมวดหมู่</p>
+                    </div>
+
+                    <div className="h-64 w-full flex flex-col justify-center">
+                      <ResponsiveContainer width="100%" height="95%">
+                        <BarChart data={barData} margin={{ top: 10, right: 20, left: -10, bottom: 5 }}>
+                          {/* ปรับแกน X ให้อ่านง่ายยิ่งขึ้นเมื่อพื้นที่ขยายเต็ม */}
+                          <XAxis dataKey="category" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} interval={0} />
+                          <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
+                          <Tooltip formatter={((value: any) => [`฿${Number(value).toLocaleString()}`]) as any} contentStyle={{ backgroundColor: '#111827', borderColor: '#334155', borderRadius: '12px', fontSize: '11px', color: '#fff' }} />
+                          <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                          <Bar dataKey="ยอดขาย" fill="#10b981" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="กำไรสุทธิ" fill="#f97316" radius={[4, 4, 0, 0]} />
+                        </BarChart>
                       </ResponsiveContainer>
-                    ) : (<div className="w-44 h-44 rounded-full border-4 border-dashed border-slate-800 flex items-center justify-center text-center text-slate-600 text-xs p-4 font-bold">ว่างเปล่า</div>)}
-                    {totalStockCostValue > 0 && (
-                      <div className="absolute inset-0 flex flex-col justify-center items-center text-center pointer-events-none">
-                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">ทุนคลังสินค้า</span>
-                      </div>
-                    )}
+                    </div>
                   </div>
 
-                  <div className="h-56 lg:col-span-2 w-full flex flex-col justify-center pl-2">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">📊 สรุปงบรายรับและกำไรสุทธิแยกตามหมวด</h4>
-                    <ResponsiveContainer width="100%" height="90%">
-                      <BarChart data={barData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
-                        <XAxis dataKey="category" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} interval={0} />
-                        <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <Tooltip formatter={((value: any) => [`฿${Number(value).toLocaleString()}`]) as any} contentStyle={{ backgroundColor: '#111827', borderColor: '#334155', borderRadius: '12px', fontSize: '11px', color: '#fff' }} />
-                        <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '5px' }} />
-                        <Bar dataKey="ยอดขาย" fill="#10b981" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="กำไรสุทธิ" fill="#f97316" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                  {/* แถวที่ 2: ยกการ์ดกราฟโดนัทลงมาไว้ข้างล่างตามที่วงไว้ */}
+                  <div className="bg-[#1e293b] p-6 rounded-2xl border border-slate-800 shadow-xl w-full flex flex-col sm:flex-row items-center justify-between gap-6">
+                    <div className="sm:max-w-xs w-full">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">📦 ทุนคลังสินค้าแยกตามหมวด</h4>
+                      <p className="text-[11px] text-slate-500 mb-2">สัดส่วนมูลค่าต้นทุนของสินค้าพร้อมจำหน่ายปัจจุบัน</p>
+                      <div className="text-2xl font-black text-white mt-2 border-t border-slate-800/80 pt-2 flex items-baseline gap-2">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase">รวมทุนคลัง:</span>
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-amber-200">฿{totalStockCostValue.toLocaleString()}</span>
+                      </div>
+                    </div>
+
+                    {/* กล่องแสดงกราฟและป้ายสีแบบกว้างแจ่มๆ */}
+                    <div className="flex-1 flex flex-col sm:flex-row items-center justify-center gap-8 w-full">
+                      {totalStockCostValue > 0 ? (
+                        <>
+                          {/* ตัวกราฟโดนัท */}
+                          <div className="w-44 h-44 relative shrink-0">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie data={donutData} cx="50%" cy="50%" innerRadius={58} outerRadius={78} paddingAngle={3} dataKey="value">
+                                  {donutData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                                </Pie>
+                                <Tooltip formatter={((value: any, name: any) => [`฿${Number(value).toLocaleString()}`, name]) as any} contentStyle={{ backgroundColor: '#111827', borderColor: '#334155', borderRadius: '12px', fontSize: '12px', color: '#fff' }} />
+                              </PieChart>
+                            </ResponsiveContainer>
+                            <div className="absolute inset-0 flex flex-col justify-center items-center text-center pointer-events-none">
+                              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">สัดส่วนทุน</span>
+                              <span className="text-xs font-black text-white mt-0.5"> คลังสินค้า</span>
+                            </div>
+                          </div>
+
+                          {/* รายละเอียดแต่ละสี (Legend แบบกริด 2 คอลัมน์ อ่านง่ายเต็มพื้นที่ข้างล่าง) */}
+                          <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 w-full border-l border-slate-800/60 pl-0 sm:pl-6">
+                            {donutData.map((item, idx) => (
+                              <div key={`legend-${idx}`} className="flex items-center gap-2 bg-[#111827]/40 p-2 rounded-xl border border-slate-800/40 text-xs">
+                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                                <div className="flex flex-col min-w-0 flex-1">
+                                  <span className="text-slate-300 font-bold truncate">{item.name}</span>
+                                  <span className="text-[10px] text-slate-500 font-mono mt-0.5">฿{item.value.toLocaleString()} ({((item.value / totalStockCostValue) * 100).toFixed(0)}%)</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="w-full py-12 border-2 border-dashed border-slate-800 rounded-xl flex items-center justify-center text-slate-600 text-xs font-bold">ไม่มีสินค้าในคลัง</div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -660,12 +789,25 @@ export default function HomeMonitor() {
                         {displayedStockItems.map((item) => {
                           const cleanName = item.name.split(' [')[0];
                           return (
-                            <ProductCard key={item.name} item={item}
-                              onPreviewImage={setPreviewImageUrl} 
-                              onEdit={(cItem) => { setEditingProduct(cItem); setEditName(cleanName); setEditSerialNumber(cItem.serial_number); setEditCost(cItem.cost.toString()); setEditPrice(cItem.price.toString()); setEditCategory(cItem.category); setEditStock(cItem.stock.toString()); setEditShippingFee('0'); setIsEditModalOpen(true); }}
-                              onSell={(cItem) => { setSelectedProduct(cItem); setIsSellModalOpen(true); }}
-                              onDelete={() => { setProductToDelete(item); setIsDeleteModalOpen(true); }} />
-                          );
+          <ProductCard 
+            key={item.id || item.serial_number || item.name}
+            item={item as any} // 👈 เติม "as any" เข้าไปเพื่อบอก TypeScript ว่าให้ผ่านฉลุยไปได้เลย ไม่ต้องล็อก Type ตัวเก่า-ใหม่ให้ปวดหัว
+            onPreviewImage={setPreviewImageUrl}
+            onEdit={(cItem) => { 
+  setEditingProduct(cItem); 
+  setEditName(cleanName); 
+  setEditSerialNumber(cItem.serial_number); 
+  setEditCost(cItem.cost.toString()); 
+  setEditPrice(cItem.price.toString()); // 👈 เปลี่ยนเป็นราคาตั้งขายของตัวมันเอง
+  setEditCategory(cItem.category); 
+  setEditStock(cItem.stock.toString()); 
+  setEditShippingFee('0'); // 👈 สินค้าในคลังยังไม่มีค่าส่ง ให้เซ็ตเป็น '0'
+  setIsEditModalOpen(true); 
+}}
+            onSell={(cItem) => { setSelectedProduct(cItem); setIsSellModalOpen(true); }}
+            onDelete={() => { setProductToDelete(item as any); setIsDeleteModalOpen(true); }} // 👈 เติม "as any" ตรงนี้ด้วยครับ
+          />
+        )
                         })}
                       </div>
                       {totalPages > 1 && (
@@ -734,12 +876,15 @@ export default function HomeMonitor() {
                           const cleanName = item.name.split(' [')[0];
 
                           return (
-                            <ProductCard key={item.name} item={item}
-                              onPreviewImage={setPreviewImageUrl} 
-                              onEdit={(cItem) => { setEditingProduct(cItem); setEditName(cleanName); setEditSerialNumber(cItem.serial_number); setEditCost(cItem.cost.toString()); setEditPrice(sellPrice.toString()); setEditCategory(cItem.category); setEditStock(cItem.stock.toString()); setEditShippingFee(shipFee.toString()); setIsEditModalOpen(true); }}
-                              onSell={(cItem) => { setSelectedProduct(cItem); setIsSellModalOpen(true); }}
-                              onDelete={() => { setProductToDelete(item); setIsDeleteModalOpen(true); }} />
-                          );
+          <ProductCard 
+            key={item.id || item.serial_number || item.name}
+            item={item as any} // 👈 เติม "as any" เข้าไปเพื่อบอก TypeScript ว่าให้ผ่านฉลุยไปได้เลย ไม่ต้องล็อก Type ตัวเก่า-ใหม่ให้ปวดหัว
+            onPreviewImage={setPreviewImageUrl}
+            onEdit={(cItem) => { setEditingProduct(cItem); setEditName(cleanName); setEditSerialNumber(cItem.serial_number); setEditCost(cItem.cost.toString()); setEditPrice(sellPrice.toString()); setEditCategory(cItem.category); setEditStock(cItem.stock.toString()); setEditShippingFee(shipFee.toString()); setIsEditModalOpen(true); }}
+            onSell={(cItem) => { setSelectedProduct(cItem); setIsSellModalOpen(true); }}
+            onDelete={() => { setProductToDelete(item as any); setIsDeleteModalOpen(true); }} // 👈 เติม "as any" ตรงนี้ด้วยครับ
+          />
+        )
                         })}
                       </div>
                       {totalPages > 1 && (
@@ -826,42 +971,104 @@ export default function HomeMonitor() {
               </div>
               <table>
                 <thead>
-                  <tr><th>วันที่</th><th>สินค้า</th><th>S/N</th><th>หมวด</th><th>สถานะ</th><th className="text-right-print">ทุน (฿)</th><th className="text-right-print">ขาย (฿)</th><th className="text-right-print">ค่าส่ง (฿)</th><th className="text-right-print">นายหน้า (฿)</th><th className="text-right-print">กำไร (฿)</th></tr>
+                  <tr>
+                    <th>วันที่</th>
+                    <th>สินค้า</th>
+                    <th>S/N</th>
+                    <th>หมวด</th>
+                    <th>สถานะ</th>
+                    <th className="text-right-print">ทุน (฿)</th>
+                    <th className="text-right-print">ขาย (฿)</th>
+                    <th className="text-right-print">ค่าส่ง (฿)</th>
+                    <th className="text-right-print">นายหน้า (฿)</th>
+                    <th className="text-right-print">กำไร (฿)</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {reportFilteredProducts.map((item, idx) => {
-                    const isSold = item.name.includes('ขายแล้ว');
+                    // 💡 ปลดล็อก Fallback ดักจับสถานะขายทั้งคอลัมน์และข้อความในชื่อสินค้า
+                    const isSold = item.is_sold === true || item.name.includes('ขายแล้ว');
                     const cost = item.cost || 0;
-                    const sp = isSold ? parseFloat(item.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0') : 0;
-                    const sf = isSold ? parseFloat(item.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0') : 0;
-                    const cm = isSold ? parseFloat(item.name.match(/หัก 3% จากกำไร: ฿([\d.]+)/)?.[1] || '0') : 0;
-                    const net = isSold ? (sp - cost - 30 - sf - cm) : 0;
-                    const date = isSold ? (item.name.match(/เมื่อ: ([\d-]+)/)?.[1] || '-') : (item.name.match(/รับเข้า: ([\d-]+)/)?.[1] || '-');
+                    
+                    // ดึงค่าการเงินฝั่งขาออก
+                    const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
+                    const sp = item.sold_price ?? parseFloat(matchPrice ? matchPrice[1] : '0');
+                    
+                    const matchShip = item.name.match(/ค่าส่ง: ฿([\d.]+)/);
+                    const sf = item.shipping_fee ?? parseFloat(matchShip ? matchShip[1] : '0');
+                    
+                    const packFee = 30;
+                    const baseProfit = sp - cost - packFee - sf;
+                    const cm = item.commission_fee ?? (baseProfit > 0 ? baseProfit * 0.03 : 0);
+                    const net = baseProfit - cm;
+                    
+                    // ดึงข้อมูลวันที่รับเข้า/จำหน่าย
+                    const matchDate = isSold ? item.name.match(/เมื่อ: ([\d-]+)/) : item.name.match(/รับเข้า: ([\d-]+)/);
+                    const fallbackDate = matchDate ? matchDate[1] : '-';
+                    // 💡 ดึงวันที่ออกมาแล้วตัด Format ให้เหลือเฉพาะ YYYY-MM-DD คลีน ๆ อิงตามเวลาไทย
+                    const rawDate = isSold ? (item.sold_at || fallbackDate) : (item.received_at || fallbackDate);
+                    const date = rawDate && rawDate !== '-' ? rawDate.slice(0, 10) : '-';
+                    
                     return (
                       <tr key={`print-${idx}`}>
-                        <td>{date}</td><td>{item.name.split(' [')[0]}</td><td className="font-mono">{item.serial_number || '-'}</td><td>{item.category}</td><td>{isSold ? 'ขายแล้ว' : 'สต็อก'}</td>
+                        <td>{date}</td>
+                        <td>{item.name.split(' [')[0]}</td>
+                        <td className="font-mono">{item.serial_number || '-'}</td>
+                        <td>{item.category}</td>
+                        <td>{isSold ? 'ขายแล้ว' : 'สต็อก'}</td>
                         <td className="text-right-print">{cost.toLocaleString()}</td>
                         <td className="text-right-print">{isSold ? sp.toLocaleString() : '-'}</td>
                         <td className="text-right-print">{isSold ? sf.toLocaleString() : '-'}</td>
-                        <td className="text-right-print">{isSold ? cm.toLocaleString() : '-'}</td>
-                        <td className="text-right-print" style={{ color: isSold && net > 0 ? '#16a34a' : '#000' }}>{isSold ? net.toLocaleString() : '-'}</td>
+                        <td className="text-right-print">{isSold ? cm.toLocaleString(undefined, {maximumFractionDigits: 2}) : '-'}</td>
+                        <td className="text-right-print" style={{ color: isSold && net > 0 ? '#16a34a' : '#000' }}>
+                          {isSold ? Math.max(0, net).toLocaleString(undefined, {maximumFractionDigits: 2}) : '-'}
+                        </td>
                       </tr>
                     );
                   })}
+                  
+                  {/* 🔥 แก้ไขแถวสรุปผลรวมท้ายตาราง (SUMMARY TOTAL) ให้คิดเงินจากข้อมูลใหม่ถูกต้องแม่นยำ */}
                   <tr className="bg-total-row">
                     <td colSpan={5} className="text-center font-bold">SUMMARY TOTAL</td>
-                    <td className="text-right-print font-bold">฿{reportFilteredProducts.reduce((a, c) => a + (!c.name.includes('ขายแล้ว') ? (c.cost||0) : 0), 0).toLocaleString()}</td>
-                    <td className="text-right-print font-bold">฿{reportFilteredProducts.reduce((a, c) => a + (c.name.includes('ขายแล้ว') ? parseFloat(c.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0') : 0), 0).toLocaleString()}</td>
-                    <td className="text-right-print font-bold">฿{reportFilteredProducts.reduce((a, c) => a + (c.name.includes('ขายแล้ว') ? parseFloat(c.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0') : 0), 0).toLocaleString()}</td>
-                    <td className="text-right-print font-bold">฿{reportFilteredProducts.reduce((a, c) => a + (c.name.includes('ขายแล้ว') ? parseFloat(c.name.match(/หัก 3% จากกำไร: ฿([\d.]+)/)?.[1] || '0') : 0), 0).toLocaleString()}</td>
+                    <td className="text-right-print font-bold">
+                      ฿{reportFilteredProducts.reduce((a, c) => a + (c.cost || 0), 0).toLocaleString()}
+                    </td>
+                    <td className="text-right-print font-bold">
+                      ฿{reportFilteredProducts.reduce((a, c) => {
+                        const isSold = c.is_sold === true || c.name.includes('ขายแล้ว');
+                        if (!isSold) return a;
+                        return a + (c.sold_price ?? parseFloat(c.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0'));
+                      }, 0).toLocaleString()}
+                    </td>
+                    <td className="text-right-print font-bold">
+                      ฿{reportFilteredProducts.reduce((a, c) => {
+                        const isSold = c.is_sold === true || c.name.includes('ขายแล้ว');
+                        if (!isSold) return a;
+                        return a + (c.shipping_fee ?? parseFloat(c.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0'));
+                      }, 0).toLocaleString()}
+                    </td>
+                    <td className="text-right-print font-bold">
+                      ฿{reportFilteredProducts.reduce((a, c) => {
+                        const isSold = c.is_sold === true || c.name.includes('ขายแล้ว');
+                        if (!isSold) return a;
+                        const cost = c.cost || 0;
+                        const sp = c.sold_price ?? parseFloat(c.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0');
+                        const sf = c.shipping_fee ?? parseFloat(c.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0');
+                        const baseProfit = sp - cost - 30 - sf;
+                        return a + (c.commission_fee ?? (baseProfit > 0 ? baseProfit * 0.03 : 0));
+                      }, 0).toLocaleString(undefined, {maximumFractionDigits: 0})}
+                    </td>
                     <td className="text-right-print font-bold" style={{ backgroundColor: '#f0fdf4', color: '#16a34a' }}>
                       ฿{reportFilteredProducts.reduce((a, c) => {
-                        if (!c.name.includes('ขายแล้ว')) return a;
-                        const sp = parseFloat(c.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0');
-                        const sf = parseFloat(c.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0');
-                        const cm = parseFloat(c.name.match(/หัก 3% จากกำไร: ฿([\d.]+)/)?.[1] || '0');
-                        return a + (sp - (c.cost||0) - 30 - sf - cm);
-                      }, 0).toLocaleString()}
+                        const isSold = c.is_sold === true || c.name.includes('ขายแล้ว');
+                        if (!isSold) return a;
+                        const cost = c.cost || 0;
+                        const sp = c.sold_price ?? parseFloat(c.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0');
+                        const sf = c.shipping_fee ?? parseFloat(c.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0');
+                        const baseProfit = sp - cost - 30 - sf;
+                        const cm = c.commission_fee ?? (baseProfit > 0 ? baseProfit * 0.03 : 0);
+                        return a + (baseProfit - cm);
+                      }, 0).toLocaleString(undefined, {maximumFractionDigits: 0})}
                     </td>
                   </tr>
                 </tbody>
@@ -967,27 +1174,37 @@ export default function HomeMonitor() {
           <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md relative animate-in zoom-in-95 duration-200">
             <button onClick={() => setIsSellModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 w-7 h-7 flex items-center justify-center rounded-full">✕</button>
             <h2 className="font-bold text-emerald-400 text-base border-b border-slate-800 pb-2">💰 บันทึกยอดขายและสรุปหลักฐานข้อมูล</h2>
-            <div className="bg-[#111827] p-3 rounded-xl border border-slate-800 text-xs">
-              <p className="text-slate-400">สินค้า: <span className="text-white font-bold">{selectedProduct.name.split(' [')[0]}</span></p>
-              <p className="text-slate-400 mt-1">ราคาทุนสินค้า: <span className="text-orange-400 font-mono">฿{selectedProduct.cost.toLocaleString()}</span> | ค่าแพ็กเกจบังคับ: <span className="text-slate-300 font-bold">฿30</span></p>
-            </div>
-            <form onSubmit={handleSellSubmit} className="flex flex-col gap-3 text-xs">
-              <div><label className="text-xs font-bold text-slate-400 block mb-1">1. ใส่ราคาขายจริงที่ปิดยอดได้</label><input type="number" step="0.01" value={soldPrice} onChange={(e) => setSoldPrice(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-base font-bold focus:border-emerald-500 focus:outline-none" placeholder="฿ ยอดขายปิดดีล..." /></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs font-bold text-slate-400 block mb-1">➕ ระบุค่าส่งจริง (ชำระขนส่ง)</label><input type="number" step="0.01" value={shippingFee} onChange={(e) => setShippingFee(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" placeholder="฿ เช่น 40, 50" /></div>
-                <div><label className="text-xs font-bold text-slate-400 block mb-1">🕒 ขายเมื่อไหร่</label><input type="date" value={soldAt} onChange={(e) => setSoldAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" /></div>
+            
+            {/* แสดงกล่องการ์ดแจ้งเตือนเมื่อทำรายการบันทึกสำเร็จ/กำลังดาวน์โหลด */}
+            {sellSuccessMessage ? (
+              <div className="p-4 rounded-xl text-center text-sm font-bold bg-emerald-950/50 text-emerald-400 border border-emerald-900/40 my-4 animate-pulse">
+                {sellSuccessMessage}
               </div>
-              {soldPrice && (
-                <div className="bg-[#111827] p-3 rounded-xl border border-slate-800 flex flex-col gap-1 text-[11px] text-slate-400">
-                  <div className="flex justify-between"><span>💵 สูตรกำไรเบื้องต้น:</span><span className="text-slate-200 font-mono">฿{(parseFloat(soldPrice) - selectedProduct.cost - 30 - (parseFloat(shippingFee) || 0)).toLocaleString(undefined, {maximumFractionDigits: 2})}</span></div>
-                  <div className="flex justify-between text-amber-400 font-medium"><span>✂️ ค่านายหน้าหัก 3% จากกำไร:</span><span className="font-mono">฿{((parseFloat(soldPrice) - selectedProduct.cost - 30 - (parseFloat(shippingFee) || 0)) > 0 ? (parseFloat(soldPrice) - selectedProduct.cost - 30 - (parseFloat(shippingFee) || 0)) * 0.03 : 0).toLocaleString(undefined, {maximumFractionDigits: 2})}</span></div>
+            ) : (
+              <>
+                <div className="bg-[#111827] p-3 rounded-xl border border-slate-800 text-xs">
+                  <p className="text-slate-400">สินค้า: <span className="text-white font-bold">{selectedProduct.name.split(' [')[0]}</span></p>
+                  <p className="text-slate-400 mt-1">ราคาทุนสินค้า: <span className="text-orange-400 font-mono">฿{selectedProduct.cost.toLocaleString()}</span> | ค่าแพ็กเกจบังคับ: <span className="text-slate-300 font-bold">฿30</span></p>
                 </div>
-              )}
-              <div><label className="text-emerald-400 font-bold block mb-1">🧾 อัปโหลดไฟล์ภาพหลักฐานซื้อขาย / สลิปโอนเงินลูกค้า *</label><input type="file" accept="image/*" onChange={(e) => setSaleProofFile(e.target.files?.[0] || null)} required className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" /></div>
-              <div><label className="text-slate-400 font-bold block mb-1">🚚 อัปโหลดไฟล์ภาพสลิปใบเสร็จค่าขนส่ง (ถ้ามี)</label><input type="file" accept="image/*" onChange={(e) => setSlipFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" /></div>
-              <div><label className="text-slate-400 font-bold block mb-1">📸 อัปโหลดไฟล์รูปถ่ายสินค้าตอนแพ็กหรือส่ง (ถ้ามี)</label><input type="file" accept="image/*" onChange={(e) => setPackageFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" /></div>
-              <button type="submit" disabled={productMutation.isPending} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl shadow-md mt-1 text-sm">{productMutation.isPending ? '⏳ กำลังอัปโหลดภาพและเซฟงบลง Database...' : '✅ ยืนยันปิดดีลและบันทึกหลักฐานทั้งหมด'}</button>
-            </form>
+                <form onSubmit={handleSellSubmit} className="flex flex-col gap-3 text-xs">
+                  <div><label className="text-xs font-bold text-slate-400 block mb-1">1. ใส่ราคาขายจริงที่ปิดยอดได้</label><input type="number" step="0.01" value={soldPrice} onChange={(e) => setSoldPrice(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-base font-bold focus:border-emerald-500 focus:outline-none" placeholder="฿ ยอดขายปิดดีล..." /></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="text-xs font-bold text-slate-400 block mb-1">➕ ระบุค่าส่งจริง (ชำระขนส่ง)</label><input type="number" step="0.01" value={shippingFee} onChange={(e) => setShippingFee(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" placeholder="฿ เช่น 40, 50" /></div>
+                    <div><label className="text-xs font-bold text-slate-400 block mb-1">🕒 ขายเมื่อไหร่</label><input type="date" value={soldAt} onChange={(e) => setSoldAt(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white font-mono text-sm" /></div>
+                  </div>
+                  {soldPrice && (
+                    <div className="bg-[#111827] p-3 rounded-xl border border-slate-800 flex flex-col gap-1 text-[11px] text-slate-400">
+                      <div className="flex justify-between"><span>💵 สูตรกำไรเบื้องต้น:</span><span className="text-slate-200 font-mono">฿{(parseFloat(soldPrice) - selectedProduct.cost - 30 - (parseFloat(shippingFee) || 0)).toLocaleString(undefined, {maximumFractionDigits: 2})}</span></div>
+                      <div className="flex justify-between text-amber-400 font-medium"><span>✂️ ค่านายหน้าหัก 3% จากกำไร:</span><span className="font-mono">฿{((parseFloat(soldPrice) - selectedProduct.cost - 30 - (parseFloat(shippingFee) || 0)) > 0 ? (parseFloat(soldPrice) - selectedProduct.cost - 30 - (parseFloat(shippingFee) || 0)) * 0.03 : 0).toLocaleString(undefined, {maximumFractionDigits: 2})}</span></div>
+                    </div>
+                  )}
+                  <div><label className="text-emerald-400 font-bold block mb-1">🧾 อัปโหลดไฟล์ภาพหลักฐานซื้อขาย / สลิปโอนเงินลูกค้า *</label><input type="file" accept="image/*" onChange={(e) => setSaleProofFile(e.target.files?.[0] || null)} required className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" /></div>
+                  <div><label className="text-slate-400 font-bold block mb-1">🚚 อัปโหลดไฟล์ภาพสลิปใบเสร็จค่าขนส่ง (ถ้ามี)</label><input type="file" accept="image/*" onChange={(e) => setSlipFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" /></div>
+                  <div><label className="text-slate-400 font-bold block mb-1">📸 อัปโหลดไฟล์รูปถ่ายสินค้าตอนแพ็กหรือส่ง (ถ้ามี)</label><input type="file" accept="image/*" onChange={(e) => setPackageFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs" /></div>
+                  <button type="submit" disabled={productMutation.isPending} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl shadow-md mt-1 text-sm">✅ ยืนยันปิดดีลและบันทึกหลักฐานทั้งหมด</button>
+                </form>
+              </>
+            )}
           </div>
         </div>
       )}
