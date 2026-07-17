@@ -73,7 +73,7 @@ export default function ProductCard({
   const displayCommission = item.commission_fee ?? (baseProfit > 0 ? baseProfit * 0.03 : 0);
   const netProfit = baseProfit - displayCommission;
 
-  // สีตามหมวดหมู่ชิ้นส่วน
+  // สีตามหมวดหมู่ชิ้นส่วน (ความเข้มระดับ 400 ยอดฮิต)
   const categoryColors: Record<string, string> = {
     CPU: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
     GPU: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
@@ -86,7 +86,8 @@ export default function ProductCard({
   };
 
   return (
-    <div className="bg-[#1e293b] rounded-2xl border border-slate-800/80 p-4 shadow-lg hover:shadow-2xl hover:border-slate-700/60 transition-all flex flex-col justify-between gap-4 font-sans text-xs">
+    /* 🧱 โทนการ์ด Midnight Navy เข้มขรึมลดแสงสะท้อน */
+    <div className="bg-[#151f32] rounded-3xl border border-slate-800/80 p-5 shadow-lg hover:shadow-2xl hover:border-slate-700/60 transition-all flex flex-col justify-between gap-4 font-sans text-xs">
       
       {/* ส่วนหัวภาพสินค้าและรายละเอียดพื้นฐาน */}
       <div className="flex gap-4">
@@ -113,7 +114,7 @@ export default function ProductCard({
             {cleanName}
           </h4>
           <p className="text-[11px] text-slate-400 font-mono">
-            S/N: <span className="text-amber-400 font-bold">{item.serial_number || '-'}</span>
+            S/N: <span className="text-amber-400 font-bold">{item.serial_number || '-'}</span> {/* 💡 คืนค่าความเข้ม 400 */}
           </p>
           <p className="text-[10px] text-slate-500 font-mono mt-0.5">
             📅 รับเข้า: {receiveDate}
@@ -121,8 +122,8 @@ export default function ProductCard({
         </div>
       </div>
 
-      {/* 💵 ส่วนข้อมูลทางการเงินดีไซน์เดิม */}
-      <div className="flex flex-col gap-2 font-sans bg-[#111827]/40 p-3 rounded-xl border border-slate-800/40">
+      {/* 💵 ส่วนข้อมูลงบบัญชีภายในตัวการ์ด (สีเฉด 400 คมชัด สว่างพอดีตา) */}
+      <div className="flex flex-col gap-2 font-sans bg-[#0b111e]/90 p-3.5 rounded-2xl border border-slate-900/40">
         
         {/* แถวทุนสินค้า */}
         <div className="flex justify-between items-center text-slate-400">
@@ -137,7 +138,7 @@ export default function ProductCard({
             <button 
               type="button"
               onClick={() => onPreviewImage(buyReceiptUrl)}
-              className="text-amber-500 hover:text-amber-400 font-bold transition-colors underline cursor-pointer flex items-center gap-1"
+              className="text-amber-400 hover:text-amber-300 font-bold transition-colors underline cursor-pointer flex items-center gap-1" /* 💡 คืนค่าความเข้ม 400 */
             >
               🔗 ดูรูปสลิปตอนซื้อ
             </button>
@@ -146,12 +147,12 @@ export default function ProductCard({
 
         {isSold ? (
           /* =========================================================
-           * 🔴 CASE: สินค้าที่จำหน่ายแล้ว (เพิ่มมิติการจัดแถวลิ้งค์รูปภาพสไตล์เดิม)
+           * 🔴 CASE: สินค้าที่จำหน่ายแล้ว
            * ========================================================= */
           <div className="flex flex-col gap-2 border-t border-slate-800/80 pt-2 mt-1">
             <div className="flex justify-between items-center text-slate-400">
               <span className="flex items-center gap-1">💡 ราคาที่ขายได้:</span>
-              <span className="font-mono font-bold text-emerald-400">฿{displaySoldPrice.toLocaleString()}</span>
+              <span className="font-mono font-bold text-emerald-400">฿{displaySoldPrice.toLocaleString()}</span> {/* 💡 คืนค่าความเข้ม 400 */}
             </div>
 
             <div className="flex justify-between items-center text-slate-400">
@@ -161,34 +162,33 @@ export default function ProductCard({
 
             <div className="flex justify-between items-center text-slate-400">
               <span className="flex items-center gap-1">📦 ค่าจัดส่งจริง:</span>
-              <span className="font-mono text-rose-400">฿{displayShippingFee.toLocaleString()}</span>
+              <span className="font-mono text-rose-400">฿{displayShippingFee.toLocaleString()}</span> {/* 💡 คืนค่าความเข้ม 400 */}
             </div>
 
             <div className="flex justify-between items-center text-slate-500 text-[11px] border-t border-dashed border-slate-800/60 pt-1.5">
               <span>📊 กำไรก่อนหักนายหน้า:</span>
-              <span className="font-mono">฿{Math.max(0, baseProfit).toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
+              <span className="font-mono text-slate-400">฿{Math.max(0, baseProfit).toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
             </div>
 
-            <div className="flex justify-between items-center text-slate-400">
+            <div className="flex justify-between items-center text-[#505050]">
               <span className="flex items-center gap-1 text-rose-400">✂️ หักนายหน้า 3% จากกำไร:</span>
-              <span className="font-mono text-amber-500">฿{displayCommission.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
+              <span className="font-mono text-amber-400">฿{displayCommission.toLocaleString(undefined, {maximumFractionDigits: 2})}</span> {/* 💡 คืนค่าความเข้ม 400 */}
             </div>
 
-            {/* แถบไฮไลท์ส้มสำหรับ NET PROFIT */}
-            <div className="bg-orange-600/10 border border-orange-500/20 p-2 rounded-xl flex justify-between items-center my-1">
-              <span className="text-orange-400 font-bold flex items-center gap-1">🔥 กำไรสุทธิส่วนของคุณ (NET PROFIT):</span>
+            {/* แถบไฮไลท์สำหรับ NET PROFIT */}
+            <div className="bg-orange-600/10 border border-orange-500/20 p-2.5 rounded-xl flex justify-between items-center my-1 shadow-sm">
+              <span className="text-orange-400 font-bold flex items-center gap-1">🔥 กำไรสุทธิส่วนของคุณ (NET PROFIT):</span> {/* 💡 คืนค่าความเข้ม 400 */}
               <span className="font-mono font-black text-orange-400 text-sm">฿{Math.max(0, netProfit).toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
             </div>
 
-            {/* 🔗 จัดระเบียบแถวรูปหลักฐานต่าง ๆ ให้มีมิติเป็นแถวสวยงามเหมือนต้นฉบับ */}
+            {/* ลิงก์รูปหลักฐานฝั่งขาออก */}
             <div className="flex justify-between items-center text-slate-400 border-t border-slate-800/80 pt-2 text-[11px]">
               <span className="text-slate-400 flex items-center gap-1">📄 หลักฐานการซื้อขาย/โอนเงิน:</span>
               {saleProofUrl && saleProofUrl !== 'ไม่มีหลักฐาน' ? (
-                <button type="button" onClick={() => onPreviewImage(saleProofUrl)} className="text-emerald-400 font-bold hover:underline flex items-center gap-0.5 cursor-pointer">🔗 ดูรูปสลิปซื้อขาย</button>
+                <button type="button" onClick={() => onPreviewImage(saleProofUrl)} className="text-emerald-400 font-bold hover:underline flex items-center gap-0.5 cursor-pointer">🔗 ดูรูปสลิปซื้อขาย</button> /* 💡 คืนค่าความเข้ม 400 */
               ) : <span className="text-slate-600">ไม่มีหลักฐาน</span>}
             </div>
 
-            {/* แสดงแถว สลิปค่าส่ง (ถ้ามีข้อมูล) */}
             {shippingSlipUrl && shippingSlipUrl !== 'ไม่มีหลักฐาน' && (
               <div className="flex justify-between items-center text-slate-400 text-[11px]">
                 <span className="text-slate-400 flex items-center gap-1">📄 หลักฐานสลิปค่าส่งสินค้า:</span>
@@ -196,7 +196,6 @@ export default function ProductCard({
               </div>
             )}
 
-            {/* แสดงแถว ภาพถ่ายแพ็กของส่ง (ถ้ามีข้อมูล) */}
             {packageImageUrl && packageImageUrl !== 'ไม่มีภาพถ่ายเพิ่มเติม' && (
               <div className="flex justify-between items-center text-slate-400 text-[11px]">
                 <span className="text-slate-400 flex items-center gap-1">📄 ภาพถ่ายสินค้าตอนแพ็กของ:</span>
@@ -215,14 +214,13 @@ export default function ProductCard({
            * ========================================================= */
           <div className="flex justify-between items-center border-t border-slate-800/80 pt-2 mt-1 text-slate-400">
             <span className="text-slate-400">✨ ราคาตั้งขายไว้:</span>
-            <span className="font-mono font-black text-amber-400 text-sm">฿{item.price.toLocaleString()}</span>
+            <span className="font-mono font-bold text-amber-400 text-sm">฿{item.price.toLocaleString()}</span> {/* 💡 คืนค่าความเข้ม 400 */}
           </div>
         )}
       </div>
 
-      {/* 🎮 กลุ่มปุ่มกดควบคุม Action ต่างๆ ด้านล่างสุดของการ์ด (ปรับดีไซน์ให้ตรงตามรูปภาพชิดขวา) */}
+      {/* 🎮 กลุ่มปุ่มกดควบคุม Action ด้านล่างชิดขวา */}
       <div className="flex gap-2 justify-end pt-2 border-t border-slate-800/40 mt-1">
-        
         <button
           type="button"
           onClick={() => onEdit(item)}
@@ -249,8 +247,8 @@ export default function ProductCard({
         >
           🗑️ ลบ
         </button>
-        
       </div>
+
     </div>
   );
 }

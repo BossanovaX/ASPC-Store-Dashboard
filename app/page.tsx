@@ -17,8 +17,6 @@ interface Product {
   category: string;
   image_url: string;
   is_sold?: boolean;
-
-  // ➕ แทรกคอลัมน์ใหม่เหล่านี้เพิ่มเข้าไปใน Interface ของ page.tsx ด้วยครับ
   received_at?: string | null;
   buy_receipt_url?: string | null;
   sold_at?: string | null;
@@ -30,17 +28,33 @@ interface Product {
   package_image_url?: string | null;
 }
 
+interface UserProfile {
+  display_name: string;
+  avatar_url: string;
+}
+
 export default function HomeMonitor() {
   const queryClient = useQueryClient();
 
   // --- แถบเมนู Sidebar (สลับหน้าจอ) ---
   const [activeMenu, setActiveMenu] = useState('dashboard'); // dashboard, stock, sold, reports
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // 👈 แทรกบรรทัดนี้เพิ่มเข้าไปครับ
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); 
 
   const [hasMounted, setHasMounted] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  
+  // --- ระบบ User Login (ปรับเป็น Username) ---
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [loginError, setLoginError] = useState('');
+
+  // --- ระบบแก้ไขข้อมูลผู้ใช้งาน (User Profile Popup) ---
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [newDisplayName, setNewDisplayName] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newAvatarFile, setNewAvatarFile] = useState<File | null>(null);
+  const [profileMessage, setProfileMessage] = useState('');
 
   // --- Popup ---
   const [isInputModalOpen, setIsInputModalOpen] = useState(false);
@@ -52,7 +66,6 @@ export default function HomeMonitor() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [deleteSuccessMessage, setDeleteSuccessMessage] = useState('');
-
   const [sellSuccessMessage, setSellSuccessMessage] = useState('');
 
   // --- 🟢 1. ระบบควบคุมการกรองฝั่งสินค้าอยู่ในสต็อก (Stock Filters) ---
@@ -113,9 +126,6 @@ export default function HomeMonitor() {
   const [packageFile, setPackageFile] = useState<File | null>(null); 
   const [soldAt, setSoldAt] = useState('');
 
-  // ==========================================
-  // 🔥 1. ใช้ TANSTACK QUERY จัดการข้อมูลสินค้า
-  // ==========================================
   const { 
     data: products = [], 
     isLoading: isProductsLoading,
@@ -130,7 +140,7 @@ export default function HomeMonitor() {
     },
     enabled: isLoggedIn,
     staleTime: 1000 * 60 * 5, 
-    refetchInterval: 1000 * 10, // 👈 แทรกเพิ่มตรงนี้! (สั่งให้ดึงข้อมูลใหม่ทุกๆ 10 วินาทีอัตโนมัติ)
+    refetchInterval: 1000 * 10, 
   });
 
   const productMutation = useMutation({
@@ -144,7 +154,26 @@ export default function HomeMonitor() {
 
   useEffect(() => { setHasMounted(true); }, []);
 
-  // รีเซ็ตหน้า Pagination เมื่อตัวกรองหรือการค้นหาเปลี่ยน
+  useEffect(() => {
+    const checkActiveSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('display_name, avatar_url')
+          .eq('id', session.user.id)
+          .single();
+        
+        if (profile) {
+          setCurrentUser(profile);
+          setNewDisplayName(profile.display_name);
+        }
+        setIsLoggedIn(true);
+      }
+    };
+    checkActiveSession();
+  }, []);
+
   useEffect(() => { setStockPage(1); }, [stockTab, stockStartDate, stockEndDate, stockSortBy, stockSearchQuery]);
   useEffect(() => { setSoldPage(1); }, [soldTab, soldStartDate, soldEndDate, soldSortBy, soldSearchQuery]);
 
@@ -162,10 +191,91 @@ export default function HomeMonitor() {
     }
   }, [isSellModalOpen]);
 
-  const handleLogin = (e: React.FormEvent) => {
+  // 💡 ฟังก์ชันล็อกอินระบบสมาชิกแบบแปลง Username เป็น Domain สัญญากลางหลังบ้าน
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === process.env.NEXT_PUBLIC_ADMIN_PASSWORD) { setIsLoggedIn(true); setLoginError(''); } 
-    else { setLoginError('❌ รหัสผ่านแอดมินไม่ถูกต้อง!'); }
+    setLoginError('⏳ กำลังตรวจสอบสิทธิ์...');
+    
+    // แปลงค่า username ที่กรอก ให้กลายเป็นรูปแบบอีเมลหลอกสำหรับ Supabase Auth
+    const formattedEmail = `${username.trim().toLowerCase()}@aspc.local`;
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: formattedEmail,
+      password: password
+    });
+
+    if (error) {
+      setLoginError(`❌ ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง`);
+      return;
+    }
+
+    if (data.user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('display_name, avatar_url')
+        .eq('id', data.user.id)
+        .single();
+      
+      if (profile) {
+        setCurrentUser(profile);
+        setNewDisplayName(profile.display_name);
+      }
+      setIsLoggedIn(true);
+      setLoginError('');
+      setPassword('');
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    setUsername('');
+    setPassword('');
+  };
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileMessage('⏳ กำลังอัปเดตข้อมูลบัญชี...');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error('ไม่พบเซสชันผู้ใช้งาน');
+
+      let finalAvatarUrl = currentUser?.avatar_url || '';
+
+      if (newAvatarFile) {
+        const fileExt = newAvatarFile.name.split('.').pop();
+        const fileName = `avatar_${session.user.id}_${Date.now()}.${fileExt}`;
+        const filePath = `avatars/${fileName}`;
+        
+        const { error: uploadError } = await supabase.storage.from('products').upload(filePath, newAvatarFile, { upsert: true });
+        if (uploadError) throw uploadError;
+
+        const { data } = supabase.storage.from('products').getPublicUrl(filePath);
+        finalAvatarUrl = data.publicUrl;
+      }
+
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ display_name: newDisplayName, avatar_url: finalAvatarUrl })
+        .eq('id', session.user.id);
+      
+      if (profileError) throw profileError;
+
+      if (newPassword.trim() !== '') {
+        if (newPassword.length < 6) throw new Error('รหัสผ่านใหม่ต้องมีความยาว 6 ตัวอักษรขึ้นไป');
+        const { error: authError } = await supabase.auth.updateUser({ password: newPassword });
+        if (authError) throw authError;
+      }
+
+      setCurrentUser({ display_name: newDisplayName, avatar_url: finalAvatarUrl });
+      setNewPassword('');
+      setNewAvatarFile(null);
+      setProfileMessage('🎉 อัปเดตข้อมูลบัญชีสำเร็จ!');
+      setTimeout(() => { setIsProfileModalOpen(false); setProfileMessage(''); }, 1200);
+    } catch (err: any) {
+      setProfileMessage(`❌ ข้อผิดพลาด: ${err.message}`);
+    }
   };
 
   const uploadImageToStorage = async (file: File, folderName: string): Promise<string> => {
@@ -261,10 +371,8 @@ export default function HomeMonitor() {
 
       const cleanBaseName = selectedProduct.name.split(' [')[0];
 
-      // 1. ลบแถวสินค้าเดิมที่เคยอยู่ในสต็อก
       await productMutation.mutateAsync({ url: '/api/products', method: 'DELETE', body: { name: selectedProduct.name } });
       
-      // บันทึกข้อมูลสินค้าปิดดีลตัวใหม่เข้าคอลัมน์ตรงๆ
       await productMutation.mutateAsync({ 
         url: '/api/products', 
         method: 'POST', 
@@ -284,14 +392,11 @@ export default function HomeMonitor() {
           sale_proof_url: saleProofUrl,
           shipping_slip_url: slipUrl,
           package_image_url: packageUrl,
-          
-          // ➕ ดึงลิงก์รูปภาพสลิปทุนซื้อของเดิมติดไปด้วย ป้องกันสลิปทุนหาย!
           buy_receipt_url: selectedProduct.buy_receipt_url || selectedProduct.name.match(/หลักฐานซื้อ: ([^\s|\]]+)/)?.[1] || null,
           received_at: selectedProduct.received_at || selectedProduct.name.match(/รับเข้า: ([\d-]+)/)?.[1] || null
         } 
       });
 
-      // 3. แจ้งเตือนสถานะสำเร็จและสั่งรีเฟรชสเตตข้อมูลหน้าบ้านแบบเร่งด่วนทันที!
       setSellSuccessMessage('🎉 ปิดยอดขายและบันทึกหลักฐานสำเร็จ!');
       queryClient.invalidateQueries({ queryKey: ['products'] }); 
       
@@ -315,9 +420,7 @@ export default function HomeMonitor() {
     try {
       setDeleteSuccessMessage('⏳ กำลังลบข้อมูลออกจากระบบ...');
       await productMutation.mutateAsync({ url: '/api/products', method: 'DELETE', body: { name: product.name } });
-      
       setDeleteSuccessMessage('🎉 ลบข้อมูลสำเร็จ!');
-      // สั่งรีเฟรชสเตตข้อมูลของ TanStack Query หน้าบ้านทันที ข้อมูลจะอัปเดตโดยไม่ต้องรีโหลดหรือล็อกอินใหม่
       queryClient.invalidateQueries({ queryKey: ['products'] }); 
       
       setTimeout(() => {
@@ -356,10 +459,8 @@ export default function HomeMonitor() {
   });
 
   const soldFilteredProducts = products.filter((item) => {
-    // 💡 ปลดล็อกเงื่อนไข: ตรวจจับทั้งชื่อสูตรเก่า และคอลัมน์ is_sold แบบใหม่ให้เห็นพร้อมกัน
     const isItemSold = item.is_sold === true || item.name.includes('ขายแล้ว');
     if (!isItemSold) return false; 
-    
     if (soldTab !== 'ทั้งหมด' && item.category !== soldTab) return false;
 
     const cleanName = item.name.split(' [')[0].toLowerCase();
@@ -376,12 +477,10 @@ export default function HomeMonitor() {
     const matchB = b.name.match(/เมื่อ: ([\d-]+)/);
     const dateA = a.sold_at || (matchA ? matchA[1] : '');
     const dateB = b.sold_at || (matchB ? matchB[1] : '');
-    
     const matchPriceA = a.name.match(/ขายแล้ว ฿([\d.]+)/);
     const matchPriceB = b.name.match(/ขายแล้ว ฿([\d.]+)/);
     const priceA = a.sold_price ?? parseFloat(matchPriceA ? matchPriceA[1] : '0');
     const priceB = b.sold_price ?? parseFloat(matchPriceB ? matchPriceB[1] : '0');
-    
     if (soldSortBy === 'date-desc') return dateB.localeCompare(dateA);
     if (soldSortBy === 'date-asc') return dateA.localeCompare(dateB);
     if (soldSortBy === 'price-desc') return priceB - priceA;
@@ -402,35 +501,22 @@ export default function HomeMonitor() {
 
   const exportToExcelFromPanel = () => {
     if (reportFilteredProducts.length === 0) { alert('❌ ไม่พบข้อมูล!'); return; }
-    
     const reportData = reportFilteredProducts.map((item, index) => {
-      // 💡 ปลดล็อกดักจับสถานะขายทั้งคอลัมน์ใหม่ และข้อความในชื่อสูตรเก่า
       const isSold = item.is_sold === true || item.name.includes('ขายแล้ว');
       const cleanName = item.name.split(' [')[0];
       const cost = item.cost || 0;
-      
-      // ดึงค่ายอดขายปิดดีล
       const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
       const sellPrice = item.sold_price ?? parseFloat(matchPrice ? matchPrice[1] : '0');
-      
-      // ดึงค่าขนส่ง
       const matchShip = item.name.match(/ค่าส่ง: ฿([\d.]+)/);
       const shipFee = item.shipping_fee ?? parseFloat(matchShip ? matchShip[1] : '0');
-      
-      // คำนวณค่านายหน้าและกำไรสุทธิ
       const packFee = 30;
       const baseProfit = sellPrice - cost - packFee - shipFee;
       const commission = item.commission_fee ?? (baseProfit > 0 ? baseProfit * 0.03 : 0);
       const netProfit = baseProfit - commission;
 
       return {
-        'ลำดับ': index + 1,
-        'ชื่อสินค้า': cleanName,
-        'S/N': item.serial_number || '-',
-        'หมวดหมู่': item.category,
-        'สถานะ': isSold ? 'ขายแล้ว' : 'สต็อก',
-        'ทุน (บาท)': cost,
-        'ยอดขาย (บาท)': isSold ? sellPrice : '-',
+        'ลำดับ': index + 1, 'ชื่อสินค้า': cleanName, 'S/N': item.serial_number || '-', 'หมวดหมู่': item.category,
+        'สถานะ': isSold ? 'ขายแล้ว' : 'สต็อก', 'ทุน (บาท)': cost, 'ยอดขาย (บาท)': isSold ? sellPrice : '-',
         'กำไรสุทธิ (บาท)': isSold ? Math.max(0, netProfit) : '-'
       };
     });
@@ -480,88 +566,86 @@ export default function HomeMonitor() {
   if (!hasMounted) return <div className="min-h-screen bg-[#0f172a]" />;
   if (!isLoggedIn) {
     return (
+      /* 🔐 กล่องฟอร์มล็อกอิน ดีไซน์เปลี่ยนอินพุตตัวบนให้รองรับการพิมพ์ Username ตรงๆ */
       <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
         <form onSubmit={handleLogin} className="bg-[#1e293b] p-6 rounded-2xl border border-slate-800 shadow-2xl w-full max-w-sm flex flex-col gap-4">
-          <div className="text-center"><h2 className="text-xl font-black text-white">🔐 ASPC Login</h2><p className="text-slate-400 text-xs mt-1">ระบบจัดการคลังและบัญชี</p></div>
+          <div className="text-center"><h2 className="text-xl font-black text-white">🔐 ASPC Account Login</h2><p className="text-slate-400 text-xs mt-1">ระบบยืนยันตัวตนพนักงาน</p></div>
           {loginError && <div className="text-xs text-red-400 bg-red-950/40 border border-red-900 p-2.5 rounded-xl text-center font-bold">{loginError}</div>}
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="รหัสผ่านแอดมิน..." className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm text-center focus:border-orange-500 focus:outline-none font-mono" required />
-          <button type="submit" className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-md">🔓 เข้าสู่ระบบ</button>
+          
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold text-slate-400">ชื่อผู้ใช้งาน (Username)</label>
+            <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="พิมพ์ชื่อผู้ใช้ของคุณ..." className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3.5 text-white text-sm focus:border-orange-500 focus:outline-none font-sans" required />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold text-slate-400">รหัสผ่านบัญชี (Password)</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3.5 text-white text-sm focus:border-orange-500 focus:outline-none font-mono" required />
+          </div>
+
+          <button type="submit" className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-md mt-1 cursor-pointer">🔓 เข้าสู่ระบบ</button>
         </form>
       </div>
     );
   }
 
-  // --- HTML Layout (Sidebar Dashboard Style) ---
   return (
-    /* 🔥 เพิ่มคลาส app-root เพื่อเตรียมปลดล็อกความสูงเวลา Print */
     <div className="app-root flex h-screen bg-[#0f172a] overflow-hidden text-slate-100 font-sans">
       <style jsx global>{`
-        /* 🔥 ชุดโค้ด CSS สำหรับระบบ Print PDF แก้บั๊กแบบปลดล็อกกรอบ */
         @media print {
-          @media print {
-  @page { size: A4 landscape; margin: 10mm; }
-  
-  /* บังคับล้างสีพื้นหลังและสีตัวอักษรหลักให้เป็น ขาว-ดำ เด็ดขาด */
-  body, html, .app-root, .main-content, .scroll-container, .max-w-7xl { 
-    background: #ffffff !important; 
-    color: #000000 !important; 
-    height: auto !important; 
-    overflow: visible !important;
-    display: block !important; 
-    position: static !important;
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-  
-  .no-print, .sidebar, header, .md\:hidden { display: none !important; }
-  
-  .print-report-header { 
-    display: block !important; 
-    margin-bottom: 20px; 
-    border-bottom: 2px solid #000000 !important; 
-    padding-bottom: 10px; 
-    color: #000000 !important;
-  }
-  
-  .print-table-container { 
-    display: block !important; 
-    width: 100% !important; 
-    margin-top: 15px; 
-    background: #ffffff !important;
-  }
-  
-  /* จัดการสไตล์ตารางให้เป็นสีขาวและเส้นขอบชัดเจน */
-  table { 
-    width: 100% !important; 
-    border-collapse: collapse !important; 
-    margin-top: 10px !important; 
-    font-size: 11px !important; 
-    background: #ffffff !important;
-    color: #000000 !important;
-    page-break-inside: auto; 
-  }
-  tr { page-break-inside: avoid; page-break-after: auto; }
-  thead { display: table-header-group; }
-  
-  /* บังคับสีตัวอักษรและเส้นขอบของช่องตาราง */
-  th, td { 
-    border: 1px solid #333333 !important; 
-    padding: 8px 10px !important; 
-    text-align: left !important;
-    color: #000000 !important;
-    background: transparent !important;
-  }
-  th { 
-    background-color: #f1f5f9 !important; 
-    font-weight: bold !important; 
-    color: #000000 !important;
-  }
-  .text-right-print { text-align: right !important; font-family: monospace; }
-  .bg-total-row { background-color: #f8fafc !important; font-weight: bold !important; }
-}
+          @page { size: A4 landscape; margin: 10mm; }
+          body, html, .app-root, .main-content, .scroll-container, .max-w-7xl { 
+            background: #ffffff !important; 
+            color: #000000 !important; 
+            height: auto !important; 
+            overflow: visible !important;
+            display: block !important; 
+            position: static !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          .no-print, .sidebar, header, .md\:hidden { display: none !important; }
+          .print-report-header { 
+            display: block !important; 
+            margin-bottom: 20px; 
+            border-bottom: 2px solid #000000 !important; 
+            padding-bottom: 10px; 
+            color: #000000 !important;
+          }
+          .print-table-container { 
+            display: block !important; 
+            width: 100% !important; 
+            margin-top: 15px; 
+            background: #ffffff !important;
+          }
+          table { 
+            width: 100% !important; 
+            border-collapse: collapse !important; 
+            margin-top: 10px !important; 
+            font-size: 11px !important; 
+            background: #ffffff !important;
+            color: #000000 !important;
+            page-break-inside: auto; 
+          }
+          tr { page-break-inside: avoid; page-break-after: auto; }
+          thead { display: table-header-group; }
+          th, td { 
+            border: 1px solid #333333 !important; 
+            padding: 8px 10px !important; 
+            text-align: left !important;
+            color: #000000 !important;
+            background: transparent !important;
+          }
+          th { 
+            background-color: #f1f5f9 !important; 
+            font-weight: bold !important; 
+            color: #000000 !important;
+          }
+          .text-right-print { text-align: right !important; font-family: monospace; }
+          .bg-total-row { background-color: #f8fafc !important; font-weight: bold !important; }
+        }
       `}</style>
 
-      {/* 🟦 SIDEBAR (แถบเมนูด้านซ้าย) */}
+      {/* 🟦 SIDEBAR */}
       <div className="sidebar w-64 bg-[#1e293b] border-r border-slate-800 flex-col justify-between hidden md:flex shrink-0 z-10">
         <div>
           <div className="h-16 flex items-center px-6 border-b border-slate-800 gap-3">
@@ -583,28 +667,39 @@ export default function HomeMonitor() {
             ))}
           </nav>
         </div>
+        
         <div className="p-4 border-t border-slate-800">
-          <div className="flex items-center gap-3 px-2 py-2">
-            <div className="w-8 h-8 rounded-full bg-slate-700 border border-slate-600"></div>
-            <div className="flex-1 min-w-0"><p className="text-xs font-bold text-white truncate">Admin Role</p><p className="text-[10px] text-emerald-400">🟢 Online</p></div>
-            <button onClick={() => { setIsLoggedIn(false); setPassword(''); }} className="text-[10px] text-slate-500 hover:text-rose-400 font-bold px-2 py-1 rounded bg-slate-800">ออก</button>
+          <div className="flex items-center gap-2 px-1 py-1">
+            <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-700 border border-slate-600 shrink-0">
+              <img 
+                src={currentUser?.avatar_url || 'https://api.dicebear.com/7.x/bottts/svg?seed=ASPC'} 
+                alt="Profile Avatar" 
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div className="flex-1 min-w-0 ml-1">
+              <p className="text-xs font-bold text-white truncate">{currentUser?.display_name || 'พนักงาน'}</p>
+              <p className="text-[10px] text-emerald-400 font-medium">🟢 Online</p>
+            </div>
+            
+            <button 
+              onClick={() => setIsProfileModalOpen(true)}
+              className="text-slate-400 hover:text-orange-400 p-1 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+              title="ตั้งค่าบัญชีผู้ใช้"
+            >
+              ⚙️
+            </button>
+
+            <button onClick={handleLogout} className="text-[10px] text-slate-500 hover:text-rose-400 font-bold px-2 py-1 rounded bg-slate-800 transition-colors cursor-pointer">ออก</button>
           </div>
         </div>
       </div>
 
-      {/* 🟩 MAIN CONTENT AREA (พื้นที่แสดงผลด้านขวา) */}
+      {/* 🟩 MAIN CONTENT AREA */}
       <div className="main-content flex-1 flex flex-col h-screen overflow-hidden pb-20 relative">
-        
-        {/* TOP HEADER */}
         <header className="h-16 bg-[#0f172a]/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between px-6 shrink-0 z-10 no-print">
           <div className="flex items-center gap-4">
-            {/* ปุ่มเปิดเมนูด้านข้าง แสดงเฉพาะบนมือถือ */}
-            <button 
-              onClick={() => setIsMobileMenuOpen(true)} 
-              className="md:hidden text-white text-xl p-2 hover:bg-slate-800 rounded-xl transition-all"
-            >
-              ☰
-            </button>
+            <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden text-white text-xl p-2 hover:bg-slate-800 rounded-xl transition-all">☰</button>
             <h2 className="text-lg font-black text-white hidden sm:block">
               {activeMenu === 'dashboard' && 'ภาพรวมระบบ (Dashboard)'}
               {activeMenu === 'stock' && 'คลังสินค้าและสต็อก (Inventory)'}
@@ -616,20 +711,16 @@ export default function HomeMonitor() {
             <div className="bg-[#1e293b] text-slate-300 text-xs px-4 py-2 rounded-full border border-slate-700 flex items-center gap-2 font-mono">
               <span>📅</span> พฤ 16 ก.ค. 2569
             </div>
-            <button onClick={() => setIsInputModalOpen(true)} className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold py-2 px-4 rounded-full shadow-lg shadow-orange-900/20 transition-all">
+            <button onClick={() => setIsInputModalOpen(true)} className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold py-2 px-4 rounded-full shadow-lg shadow-orange-900/20 transition-all cursor-pointer">
               + นำเข้าสินค้า
             </button>
           </div>
         </header>
 
-        {/* SCROLLABLE VIEW (สลับหน้าจอตามเมนู) */}
-        {/* 🔥 เพิ่มคลาส scroll-container ให้ css ดึงไปทำลายเวลาพิมพ์ */}
         <div className="scroll-container flex-1 overflow-y-auto p-4 md:p-6 no-scrollbar">
           <div className="max-w-7xl mx-auto flex flex-col gap-6">
 
-            {/* =========================================================
-              * 🚀 VIEW: DASHBOARD (ภาพรวม)
-              * ========================================================= */}
+            {/* VIEW: DASHBOARD */}
             {activeMenu === 'dashboard' && (
               <div className="animate-in fade-in duration-300 flex flex-col gap-6 no-print">
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -661,24 +752,19 @@ export default function HomeMonitor() {
                     <div className="absolute -right-4 -top-4 text-orange-400/30 text-7xl font-black">🔥</div>
                     <p className="text-[10px] font-bold uppercase tracking-wider opacity-90 relative z-10">กำไรสุทธิ (NET PROFIT)</p>
                     <h3 className="text-3xl font-black mt-1 relative z-10">฿{totalNetProfitAll.toLocaleString(undefined,{maximumFractionDigits:0})}</h3>
-                    <p className="text-[10px] mt-2 bg-black/20 inline-block px-2 py-0.5 rounded-full relative z-10">กำไรเข้ากระเป๋าจริง</p>
+                    <p className="text-[10px] text-white/70 mt-1.5">กำไรเข้ากระเป๋าจริง</p>
                   </div>
                 </div>
 
-                {/* 📊 ส่วนแสดงผลกราฟสถิติแบบจัดเรียงบน-ล่าง (ปรับปรุงใหม่ตามคำแนะนำ) */}
                 <div className="flex flex-col gap-6 no-print">
-                  
-                  {/* แถวที่ 1: กราฟแท่งแสดงยอดขายและกำไรสุทธิ ขยายไซส์เต็มหน้าจอ Full Width */}
                   <div className="bg-[#1e293b] p-6 rounded-2xl border border-slate-800 shadow-xl w-full flex flex-col justify-between">
                     <div>
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">📊 สรุปงบรายรับและกำไรสุทธิแยกตามหมวด</h4>
                       <p className="text-[11px] text-slate-500 mb-4">เปรียบเทียบยอดขายรวมและกำไรสุทธิที่หักค่าใช้จ่ายทั้งหมดแล้วในแต่ละหมวดหมู่</p>
                     </div>
-
                     <div className="h-64 w-full flex flex-col justify-center">
                       <ResponsiveContainer width="100%" height="95%">
                         <BarChart data={barData} margin={{ top: 10, right: 20, left: -10, bottom: 5 }}>
-                          {/* ปรับแกน X ให้อ่านง่ายยิ่งขึ้นเมื่อพื้นที่ขยายเต็ม */}
                           <XAxis dataKey="category" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} interval={0} />
                           <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
                           <Tooltip formatter={((value: any) => [`฿${Number(value).toLocaleString()}`]) as any} contentStyle={{ backgroundColor: '#111827', borderColor: '#334155', borderRadius: '12px', fontSize: '11px', color: '#fff' }} />
@@ -690,10 +776,9 @@ export default function HomeMonitor() {
                     </div>
                   </div>
 
-                  {/* แถวที่ 2: ยกการ์ดกราฟโดนัทลงมาไว้ข้างล่างตามที่วงไว้ */}
                   <div className="bg-[#1e293b] p-6 rounded-2xl border border-slate-800 shadow-xl w-full flex flex-col sm:flex-row items-center justify-between gap-6">
                     <div className="sm:max-w-xs w-full">
-                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">📦 ทุนคลังสินค้าแยกตามหมวด</h4>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">🍩 ทุนคลังสินค้าแยกตามหมวด</h4>
                       <p className="text-[11px] text-slate-500 mb-2">สัดส่วนมูลค่าต้นทุนของสินค้าพร้อมจำหน่ายปัจจุบัน</p>
                       <div className="text-2xl font-black text-white mt-2 border-t border-slate-800/80 pt-2 flex items-baseline gap-2">
                         <span className="text-[10px] text-slate-500 font-bold uppercase">รวมทุนคลัง:</span>
@@ -701,11 +786,9 @@ export default function HomeMonitor() {
                       </div>
                     </div>
 
-                    {/* กล่องแสดงกราฟและป้ายสีแบบกว้างแจ่มๆ */}
                     <div className="flex-1 flex flex-col sm:flex-row items-center justify-center gap-8 w-full">
                       {totalStockCostValue > 0 ? (
                         <>
-                          {/* ตัวกราฟโดนัท */}
                           <div className="w-44 h-44 relative shrink-0">
                             <ResponsiveContainer width="100%" height="100%">
                               <PieChart>
@@ -717,11 +800,10 @@ export default function HomeMonitor() {
                             </ResponsiveContainer>
                             <div className="absolute inset-0 flex flex-col justify-center items-center text-center pointer-events-none">
                               <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">สัดส่วนทุน</span>
-                              <span className="text-xs font-black text-white mt-0.5"> คลังสินค้า</span>
+                              <span className="text-xs font-black text-white mt-0.5">คลังสินค้า</span>
                             </div>
                           </div>
 
-                          {/* รายละเอียดแต่ละสี (Legend แบบกริด 2 คอลัมน์ อ่านง่ายเต็มพื้นที่ข้างล่าง) */}
                           <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 w-full border-l border-slate-800/60 pl-0 sm:pl-6">
                             {donutData.map((item, idx) => (
                               <div key={`legend-${idx}`} className="flex items-center gap-2 bg-[#111827]/40 p-2 rounded-xl border border-slate-800/40 text-xs">
@@ -743,9 +825,7 @@ export default function HomeMonitor() {
               </div>
             )}
 
-            {/* =========================================================
-              * 📦 VIEW: STOCK (คลังสินค้าปัจจุบัน)
-              * ========================================================= */}
+            {/* VIEW: STOCK */}
             {activeMenu === 'stock' && (
               <div className="animate-in fade-in duration-300 bg-[#1e293b] p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col gap-4 no-print">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 border-b border-slate-800 pb-3 mb-1">
@@ -762,7 +842,7 @@ export default function HomeMonitor() {
                   <input type="date" value={stockStartDate} onChange={(e) => setStockStartDate(e.target.value)} className="bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-slate-300 text-xs font-mono focus:border-orange-500 focus:outline-none" />
                   <input type="date" value={stockEndDate} onChange={(e) => setStockEndDate(e.target.value)} className="bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-slate-300 text-xs font-mono focus:border-orange-500 focus:outline-none" />
                   <select value={stockSortBy} onChange={(e) => setStockSortBy(e.target.value)} className="bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-2 px-3 text-xs focus:outline-none">
-                    <option value="date-desc">🕒 รับเข้า: ใหม่ ➔ เก่า</option><option value="date-asc">⏳ รับเข้า: เก่า ➔ ใหม่</option>
+                    <option value="date-desc">🕒  รับเข้า: ใหม่ ➔ เก่า</option><option value="date-asc">⏳  รับเข้า: เก่า ➔ ใหม่</option>
                     <option value="name-asc">🔤 ชื่อ: ก-ฮ / A-Z</option><option value="name-desc">🔤 ชื่อ: ฮ-ก / Z-A</option>
                     <option value="price-desc">💰 ราคา: สูง ➔ ต่ำ</option><option value="price-asc">🪙 ราคา: ต่ำ ➔ สูง</option>
                   </select>
@@ -789,29 +869,29 @@ export default function HomeMonitor() {
                         {displayedStockItems.map((item) => {
                           const cleanName = item.name.split(' [')[0];
                           return (
-          <ProductCard 
-            key={item.id || item.serial_number || item.name}
-            item={item as any} // 👈 เติม "as any" เข้าไปเพื่อบอก TypeScript ว่าให้ผ่านฉลุยไปได้เลย ไม่ต้องล็อก Type ตัวเก่า-ใหม่ให้ปวดหัว
-            onPreviewImage={setPreviewImageUrl}
-            onEdit={(cItem) => { 
-  setEditingProduct(cItem); 
-  setEditName(cleanName); 
-  setEditSerialNumber(cItem.serial_number); 
-  setEditCost(cItem.cost.toString()); 
-  setEditPrice(cItem.price.toString()); // 👈 เปลี่ยนเป็นราคาตั้งขายของตัวมันเอง
-  setEditCategory(cItem.category); 
-  setEditStock(cItem.stock.toString()); 
-  setEditShippingFee('0'); // 👈 สินค้าในคลังยังไม่มีค่าส่ง ให้เซ็ตเป็น '0'
-  setIsEditModalOpen(true); 
-}}
-            onSell={(cItem) => { setSelectedProduct(cItem); setIsSellModalOpen(true); }}
-            onDelete={() => { setProductToDelete(item as any); setIsDeleteModalOpen(true); }} // 👈 เติม "as any" ตรงนี้ด้วยครับ
-          />
-        )
+                            <ProductCard 
+                              key={item.id || item.serial_number || item.name}
+                              item={item as any} 
+                              onPreviewImage={setPreviewImageUrl}
+                              onEdit={(cItem) => { 
+                                setEditingProduct(cItem); 
+                                setEditName(cleanName); 
+                                setEditSerialNumber(cItem.serial_number); 
+                                setEditCost(cItem.cost.toString()); 
+                                setEditPrice(cItem.price.toString()); 
+                                setEditCategory(cItem.category); 
+                                setEditStock(cItem.stock.toString()); 
+                                setEditShippingFee('0'); 
+                                setIsEditModalOpen(true); 
+                              }}
+                              onSell={(cItem) => { setSelectedProduct(cItem); setIsSellModalOpen(true); }}
+                              onDelete={() => { setProductToDelete(item as any); setIsDeleteModalOpen(true); }} 
+                            />
+                          )
                         })}
                       </div>
                       {totalPages > 1 && (
-                        <div className="flex justify-center gap-1.5 pt-4 border-t border-slate-800/60 text-xs">
+                        <div className="flex justify-center gap-1.5 pt-4 border-t border-[#slate-800/60] text-xs">
                           <button onClick={() => setStockPage(prev => Math.max(prev - 1, 1))} disabled={stockPage === 1} className="px-3 py-1.5 rounded-lg bg-[#111827] text-slate-400 hover:text-white disabled:opacity-30">◀</button>
                           {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
                             <button key={p} onClick={() => setStockPage(p)} className={`w-8 h-8 rounded-lg font-bold ${stockPage === p ? 'bg-orange-600 text-white' : 'bg-[#111827] text-slate-400'}`}>{p}</button>
@@ -825,9 +905,7 @@ export default function HomeMonitor() {
               </div>
             )}
 
-            {/* =========================================================
-              * 🛒 VIEW: SOLD (ประวัติการขายออก)
-              * ========================================================= */}
+            {/* VIEW: SOLD */}
             {activeMenu === 'sold' && (
               <div className="animate-in fade-in duration-300 bg-[#1e293b] p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col gap-4 no-print">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 border-b border-slate-800 pb-3 mb-1">
@@ -876,15 +954,15 @@ export default function HomeMonitor() {
                           const cleanName = item.name.split(' [')[0];
 
                           return (
-          <ProductCard 
-            key={item.id || item.serial_number || item.name}
-            item={item as any} // 👈 เติม "as any" เข้าไปเพื่อบอก TypeScript ว่าให้ผ่านฉลุยไปได้เลย ไม่ต้องล็อก Type ตัวเก่า-ใหม่ให้ปวดหัว
-            onPreviewImage={setPreviewImageUrl}
-            onEdit={(cItem) => { setEditingProduct(cItem); setEditName(cleanName); setEditSerialNumber(cItem.serial_number); setEditCost(cItem.cost.toString()); setEditPrice(sellPrice.toString()); setEditCategory(cItem.category); setEditStock(cItem.stock.toString()); setEditShippingFee(shipFee.toString()); setIsEditModalOpen(true); }}
-            onSell={(cItem) => { setSelectedProduct(cItem); setIsSellModalOpen(true); }}
-            onDelete={() => { setProductToDelete(item as any); setIsDeleteModalOpen(true); }} // 👈 เติม "as any" ตรงนี้ด้วยครับ
-          />
-        )
+                            <ProductCard 
+                              key={item.id || item.serial_number || item.name} 
+                              item={item as any} 
+                              onPreviewImage={setPreviewImageUrl}
+                              onEdit={(cItem) => { setEditingProduct(cItem); setEditName(cleanName); setEditSerialNumber(cItem.serial_number); setEditCost(cItem.cost.toString()); setEditPrice(sellPrice.toString()); setEditCategory(cItem.category); setEditStock(cItem.stock.toString()); setEditShippingFee(shipFee.toString()); setIsEditModalOpen(true); }}
+                              onSell={(cItem) => { setSelectedProduct(cItem); setIsSellModalOpen(true); }}
+                              onDelete={() => { setProductToDelete(item as any); setIsDeleteModalOpen(true); }} 
+                            />
+                          );
                         })}
                       </div>
                       {totalPages > 1 && (
@@ -902,9 +980,7 @@ export default function HomeMonitor() {
               </div>
             )}
 
-            {/* =========================================================
-              * 📄 VIEW: REPORTS (ศูนย์ออกเอกสาร)
-              * ========================================================= */}
+            {/* VIEW: REPORTS */}
             {activeMenu === 'reports' && (
               <div className="animate-in fade-in duration-300 bg-[#1e293b] p-6 rounded-2xl shadow-xl border border-slate-800 flex flex-col gap-6 no-print">
                 <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
@@ -952,10 +1028,10 @@ export default function HomeMonitor() {
                     <p className="text-sm text-slate-300">พบเอกสารในระบบ <span className="text-orange-400 font-black text-xl px-2">{reportFilteredProducts.length}</span> แถวบัญชี</p>
                   </div>
                   <div className="flex gap-3 w-full md:w-auto">
-                    <button onClick={exportToExcelFromPanel} className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-black py-3 px-6 rounded-xl shadow-md transition-all flex items-center justify-center gap-2">
+                    <button onClick={exportToExcelFromPanel} className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-black py-3 px-6 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer">
                       📊 ดึงไฟล์ Excel
                     </button>
-                    <button onClick={exportToPDF} className="flex-1 md:flex-none bg-rose-600 hover:bg-rose-500 text-white text-sm font-black py-3 px-6 rounded-xl shadow-md transition-all flex items-center justify-center gap-2">
+                    <button onClick={exportToPDF} className="flex-1 md:flex-none bg-rose-600 hover:bg-rose-500 text-white text-sm font-black py-3 px-6 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer">
                       📄 พิมพ์ PDF
                     </button>
                   </div>
@@ -963,7 +1039,7 @@ export default function HomeMonitor() {
               </div>
             )}
 
-            {/* ตารางพิมพ์รายงาน PDF ถูกซ่อนอยู่ด้านล่าง รอเวลาสั่ง print */}
+            {/* ตารางพิมพ์รายงาน PDF */}
             <div className="hidden print-table-container">
               <div className="print-report-header text-black">
                 <h1 className="text-xl font-bold tracking-tight">รายงานประวัติสินค้าและสรุปงบดุลบัญชีการเงิน</h1>
@@ -972,104 +1048,42 @@ export default function HomeMonitor() {
               <table>
                 <thead>
                   <tr>
-                    <th>วันที่</th>
-                    <th>สินค้า</th>
-                    <th>S/N</th>
-                    <th>หมวด</th>
-                    <th>สถานะ</th>
-                    <th className="text-right-print">ทุน (฿)</th>
-                    <th className="text-right-print">ขาย (฿)</th>
-                    <th className="text-right-print">ค่าส่ง (฿)</th>
-                    <th className="text-right-print">นายหน้า (฿)</th>
+                    <th>วันที่</th><th>สินค้า</th><th>S/N</th><th>หมวด</th><th>สถานะ</th>
+                    <th className="text-right-print">ทุน (฿)</th><th className="text-right-print">ขาย (฿)</th>
+                    <th className="text-right-print">ค่าส่ง (฿)</th><th className="text-right-print">นายหน้า (฿)</th>
                     <th className="text-right-print">กำไร (฿)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {reportFilteredProducts.map((item, idx) => {
-                    // 💡 ปลดล็อก Fallback ดักจับสถานะขายทั้งคอลัมน์และข้อความในชื่อสินค้า
-                    const isSold = item.is_sold === true || item.name.includes('ขายแล้ว');
+                    const isSold = item.name.includes('ขายแล้ว');
                     const cost = item.cost || 0;
-                    
-                    // ดึงค่าการเงินฝั่งขาออก
                     const matchPrice = item.name.match(/ขายแล้ว ฿([\d.]+)/);
                     const sp = item.sold_price ?? parseFloat(matchPrice ? matchPrice[1] : '0');
-                    
                     const matchShip = item.name.match(/ค่าส่ง: ฿([\d.]+)/);
                     const sf = item.shipping_fee ?? parseFloat(matchShip ? matchShip[1] : '0');
-                    
                     const packFee = 30;
                     const baseProfit = sp - cost - packFee - sf;
                     const cm = item.commission_fee ?? (baseProfit > 0 ? baseProfit * 0.03 : 0);
                     const net = baseProfit - cm;
-                    
-                    // ดึงข้อมูลวันที่รับเข้า/จำหน่าย
                     const matchDate = isSold ? item.name.match(/เมื่อ: ([\d-]+)/) : item.name.match(/รับเข้า: ([\d-]+)/);
                     const fallbackDate = matchDate ? matchDate[1] : '-';
-                    // 💡 ดึงวันที่ออกมาแล้วตัด Format ให้เหลือเฉพาะ YYYY-MM-DD คลีน ๆ อิงตามเวลาไทย
                     const rawDate = isSold ? (item.sold_at || fallbackDate) : (item.received_at || fallbackDate);
                     const date = rawDate && rawDate !== '-' ? rawDate.slice(0, 10) : '-';
-                    
                     return (
                       <tr key={`print-${idx}`}>
-                        <td>{date}</td>
-                        <td>{item.name.split(' [')[0]}</td>
-                        <td className="font-mono">{item.serial_number || '-'}</td>
-                        <td>{item.category}</td>
-                        <td>{isSold ? 'ขายแล้ว' : 'สต็อก'}</td>
-                        <td className="text-right-print">{cost.toLocaleString()}</td>
-                        <td className="text-right-print">{isSold ? sp.toLocaleString() : '-'}</td>
-                        <td className="text-right-print">{isSold ? sf.toLocaleString() : '-'}</td>
-                        <td className="text-right-print">{isSold ? cm.toLocaleString(undefined, {maximumFractionDigits: 2}) : '-'}</td>
-                        <td className="text-right-print" style={{ color: isSold && net > 0 ? '#16a34a' : '#000' }}>
-                          {isSold ? Math.max(0, net).toLocaleString(undefined, {maximumFractionDigits: 2}) : '-'}
-                        </td>
+                        <td>{date}</td><td>{item.name.split(' [')[0]}</td><td className="font-mono">{item.serial_number || '-'}</td><td>{item.category}</td><td>{isSold ? 'ขายแล้ว' : 'สต็อก'}</td>
+                        <td className="text-right-print">{cost.toLocaleString()}</td><td className="text-right-print">{isSold ? sp.toLocaleString() : '-'}</td><td className="text-right-print">{isSold ? sf.toLocaleString() : '-'}</td><td className="text-right-print">{isSold ? cm.toLocaleString(undefined, {maximumFractionDigits: 2}) : '-'}</td><td className="text-right-print" style={{ color: isSold && net > 0 ? '#16a34a' : '#000' }}>{isSold ? Math.max(0, net).toLocaleString(undefined, {maximumFractionDigits: 2}) : '-'}</td>
                       </tr>
                     );
                   })}
-                  
-                  {/* 🔥 แก้ไขแถวสรุปผลรวมท้ายตาราง (SUMMARY TOTAL) ให้คิดเงินจากข้อมูลใหม่ถูกต้องแม่นยำ */}
                   <tr className="bg-total-row">
                     <td colSpan={5} className="text-center font-bold">SUMMARY TOTAL</td>
-                    <td className="text-right-print font-bold">
-                      ฿{reportFilteredProducts.reduce((a, c) => a + (c.cost || 0), 0).toLocaleString()}
-                    </td>
-                    <td className="text-right-print font-bold">
-                      ฿{reportFilteredProducts.reduce((a, c) => {
-                        const isSold = c.is_sold === true || c.name.includes('ขายแล้ว');
-                        if (!isSold) return a;
-                        return a + (c.sold_price ?? parseFloat(c.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0'));
-                      }, 0).toLocaleString()}
-                    </td>
-                    <td className="text-right-print font-bold">
-                      ฿{reportFilteredProducts.reduce((a, c) => {
-                        const isSold = c.is_sold === true || c.name.includes('ขายแล้ว');
-                        if (!isSold) return a;
-                        return a + (c.shipping_fee ?? parseFloat(c.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0'));
-                      }, 0).toLocaleString()}
-                    </td>
-                    <td className="text-right-print font-bold">
-                      ฿{reportFilteredProducts.reduce((a, c) => {
-                        const isSold = c.is_sold === true || c.name.includes('ขายแล้ว');
-                        if (!isSold) return a;
-                        const cost = c.cost || 0;
-                        const sp = c.sold_price ?? parseFloat(c.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0');
-                        const sf = c.shipping_fee ?? parseFloat(c.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0');
-                        const baseProfit = sp - cost - 30 - sf;
-                        return a + (c.commission_fee ?? (baseProfit > 0 ? baseProfit * 0.03 : 0));
-                      }, 0).toLocaleString(undefined, {maximumFractionDigits: 0})}
-                    </td>
-                    <td className="text-right-print font-bold" style={{ backgroundColor: '#f0fdf4', color: '#16a34a' }}>
-                      ฿{reportFilteredProducts.reduce((a, c) => {
-                        const isSold = c.is_sold === true || c.name.includes('ขายแล้ว');
-                        if (!isSold) return a;
-                        const cost = c.cost || 0;
-                        const sp = c.sold_price ?? parseFloat(c.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0');
-                        const sf = c.shipping_fee ?? parseFloat(c.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0');
-                        const baseProfit = sp - cost - 30 - sf;
-                        const cm = c.commission_fee ?? (baseProfit > 0 ? baseProfit * 0.03 : 0);
-                        return a + (baseProfit - cm);
-                      }, 0).toLocaleString(undefined, {maximumFractionDigits: 0})}
-                    </td>
+                    <td className="text-right-print font-bold">฿{reportFilteredProducts.reduce((a, c) => a + (c.cost || 0), 0).toLocaleString()}</td>
+                    <td className="text-right-print font-bold">฿{reportFilteredProducts.reduce((a, c) => { const isSold = c.is_sold === true || c.name.includes('ขายแล้ว'); if (!isSold) return a; return a + (c.sold_price ?? parseFloat(c.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0')); }, 0).toLocaleString()}</td> 
+                    <td className="text-right-print font-bold">฿{reportFilteredProducts.reduce((a, c) => { const isSold = c.is_sold === true || c.name.includes('ขายแล้ว'); if (!isSold) return a; return a + (c.shipping_fee ?? parseFloat(c.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0')); }, 0).toLocaleString()}</td> 
+                    <td className="text-right-print font-bold">฿{reportFilteredProducts.reduce((a, c) => { const isSold = c.is_sold === true || c.name.includes('ขายแล้ว'); if (!isSold) return a; const cost = c.cost || 0; const sp = c.sold_price ?? parseFloat(c.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0'); const sf = c.shipping_fee ?? parseFloat(c.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0'); const baseProfit = sp - cost - 30 - sf; return a + (c.commission_fee ?? (baseProfit > 0 ? baseProfit * 0.03 : 0)); }, 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</td> 
+                    <td className="text-right-print font-bold" style={{ backgroundColor: '#f0fdf4', color: '#16a34a' }}>฿{reportFilteredProducts.reduce((a, c) => { const isSold = c.is_sold === true || c.name.includes('ขายแล้ว'); if (!isSold) return a; const cost = c.cost || 0; const sp = c.sold_price ?? parseFloat(c.name.match(/ขายแล้ว ฿([\d.]+)/)?.[1] || '0'); const sf = c.shipping_fee ?? parseFloat(c.name.match(/ค่าส่ง: ฿([\d.]+)/)?.[1] || '0'); const baseProfit = sp - cost - 30 - sf; const cm = c.commission_fee ?? (baseProfit > 0 ? baseProfit * 0.03 : 0); return a + (baseProfit - cm); }, 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</td> 
                   </tr>
                 </tbody>
               </table>
@@ -1080,20 +1094,50 @@ export default function HomeMonitor() {
       </div>
 
       {/* =========================================================
-        * 🔥 POPUP MODALS
+        * ⚙️ POPUP: แก้ไขข้อมูลพนักงาน (User Profile Modal)
         * ========================================================= */}
+      {isProfileModalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[60] no-print">
+          <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-sm relative animate-in zoom-in-95 duration-200">
+            <button onClick={() => { setIsProfileModalOpen(false); setProfileMessage(''); }} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 w-7 h-7 flex items-center justify-center rounded-full">✕</button>
+            <h2 className="font-bold text-orange-400 text-base border-b border-slate-800 pb-2">⚙️ ตั้งค่าและแก้ไขข้อมูลบัญชีผู้ใช้</h2>
+            
+            {profileMessage && (
+              <div className="p-2.5 rounded-xl text-center text-xs font-bold bg-[#111827] text-orange-300 border border-slate-800">
+                {profileMessage}
+              </div>
+            )}
 
-      {/* 🖼️ POPUP 0: ขยายรูปภาพสลิปแบบ Lightbox */}
-      {previewImageUrl && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-[100] animate-in fade-in duration-200" onClick={() => setPreviewImageUrl(null)}>
-          <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col items-center justify-center" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setPreviewImageUrl(null)} className="absolute -top-12 right-0 text-white hover:text-rose-500 font-bold text-xl bg-slate-800/50 w-10 h-10 rounded-full flex items-center justify-center transition-colors">✕</button>
-            <img src={previewImageUrl} className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border border-slate-700" alt="Slip Preview" />
+            <form onSubmit={handleUpdateProfile} className="flex flex-col gap-3.5 text-xs">
+              <div className="flex flex-col items-center justify-center gap-2 border-b border-slate-800/60 pb-3">
+                <div className="w-16 h-16 rounded-full overflow-hidden bg-slate-700 border-2 border-orange-500/20 shadow-lg">
+                  <img src={currentUser?.avatar_url || 'https://api.dicebear.com/7.x/bottts/svg?seed=ASPC'} alt="Current Profile" className="w-full h-full object-cover" />
+                </div>
+                <span className="text-[10px] text-slate-500">รูปภาพโปรไฟล์พนักงานปัจจุบัน</span>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-slate-400 font-bold">1. เปลี่ยนชื่อแสดงผล (Display Name)</label>
+                <input type="text" value={newDisplayName} onChange={(e) => setNewDisplayName(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm focus:border-orange-500 focus:outline-none" />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-slate-400 font-bold">2. เปลี่ยนรหัสผ่านใหม่ (ทิ้งว่างไว้ได้ถ้าไม่ต้องการเปลี่ยน)</label>
+                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="ป้อนรหัสผ่าน 6 ตัวขึ้นไป..." className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm focus:border-orange-500 focus:outline-none font-mono" />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-orange-400 font-bold">3. อัปโหลดรูปภาพโปรไฟล์ใหม่ (Avatar)</label>
+                <input type="file" accept="image/*" onChange={(e) => setNewAvatarFile(e.target.files?.[0] || null)} className="w-full bg-[#111827] border border-slate-700 text-slate-300 rounded-xl py-1.5 px-3 text-xs" />
+              </div>
+
+              <button type="submit" className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-md mt-1 cursor-pointer">💾 บันทึกและอัปเดตข้อมูลบัญชี</button>
+            </form>
           </div>
         </div>
       )}
 
-      {/* 📥 POPUP 1: ลงทะเบียนของเข้าคลัง */}
+      {/* POPUP MODALS PRODUCT MANAGEMENT */}
       {isInputModalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 no-print">
           <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md relative animate-in zoom-in-95 duration-200">
@@ -1118,13 +1162,12 @@ export default function HomeMonitor() {
                 <div><label className="text-slate-400 block mb-1 font-bold">ราคาตั้งขายเบื้องต้น *</label><input type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="฿ ตั้งเป้าขาย" /></div>
                 <div><label className="text-slate-400 block mb-1 font-bold">จำนวนสินค้าเข้าคลัง *</label><input type="number" value={stock} onChange={(e) => setStock(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm" placeholder="จำนวนชิ้น" /></div>
               </div>
-              <button type="submit" disabled={productMutation.isPending} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 px-4 rounded-xl mt-2 text-sm">{productMutation.isPending ? '⏳ กำลังยิงไฟล์เข้าระบบ...' : '🚀 บันทึกข้อมูลและรูปภาพเข้าสต็อก'}</button>
+              <button type="submit" disabled={productMutation.isPending} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 px-4 rounded-xl mt-2 text-sm cursor-pointer">{productMutation.isPending ? '⏳ กำลังยิงไฟล์เข้าระบบ...' : '🚀 บันทึกข้อมูลและรูปภาพเข้าสต็อก'}</button>
             </form>
           </div>
         </div>
       )}
 
-      {/* 📝 POPUP 3: หน้าต่างแก้ไขสินค้า */}
       {isEditModalOpen && editingProduct && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 no-print font-sans">
           <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md max-h-[90vh] overflow-y-auto relative no-scrollbar font-sans animate-in zoom-in-95 duration-200">
@@ -1145,7 +1188,7 @@ export default function HomeMonitor() {
                 <div><label className="text-slate-400 block mb-1 font-bold font-sans">{editingProduct.name.includes('ขายแล้ว') ? 'ราคาที่ปิดยอดขาย (บาท)' : 'ราคาตั้งขายสินค้า (บาท)'}</label><input type="number" step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm font-mono focus:border-amber-500 focus:outline-none" /></div>
               </div>
               {!editingProduct.name.includes('ขายแล้ว') && (<div><label className="text-slate-400 block mb-1 font-bold font-sans">จำนวนสินค้าคงเหลือในคลัง</label><input type="number" value={editStock} onChange={(e) => setEditStock(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm font-mono focus:border-amber-500 focus:outline-none" /></div>)}
-              {editingProduct.name.includes('ขายแล้ว') && (<div><label className="text-orange-400 block mb-1 font-bold font-sans">🚚 แก้ไขยอดค่าจัดส่งขนส่งจริง (บาท)</label><input type="number" step="0.01" value={editShippingFee} onChange={(e) => setEditShippingFee(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm font-mono focus:border-orange-500 focus:outline-none" /></div>)}
+              {editingProduct.name.includes('ขายแล้ว') && (<div><label className="text-orange-400 block mb-1 font-bold font-sans">🚚  แก้ไขยอดค่าจัดส่งขนส่งจริง (บาท)</label><input type="number" step="0.01" value={editShippingFee} onChange={(e) => setEditShippingFee(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3.5 text-white text-sm font-mono focus:border-orange-500 focus:outline-none" /></div>)}
               <div className="border-t border-slate-800 pt-3 mt-1 flex flex-col gap-2.5 font-sans">
                 <span className="text-amber-500 font-bold block text-[11px] font-sans">📸 อัปโหลดเปลี่ยนรูปภาพ / เพิ่มรูปภาพทีหลัง:</span>
                 {!editingProduct.name.includes('ขายแล้ว') && (
@@ -1162,7 +1205,7 @@ export default function HomeMonitor() {
                   </>
                 )}
               </div>
-              <button type="submit" disabled={productMutation.isPending} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-4 rounded-xl shadow-md mt-2 text-sm font-sans transition-colors">{productMutation.isPending ? '⏳ กำลังบันทึกและอัปเดตไฟล์ลงคลัง...' : '✅ ยืนยันและบันทึกการแก้ไขทั้งหมด'}</button>
+              <button type="submit" disabled={productMutation.isPending} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-4 rounded-xl shadow-md mt-2 text-sm font-sans transition-colors cursor-pointer">{productMutation.isPending ? '⏳ กำลังบันทึกและอัปเดตไฟล์ลงคลัง...' : '✅ ยืนยันและบันทึกการแก้ไขทั้งหมด'}</button>
             </form>
           </div>
         </div>
@@ -1175,7 +1218,6 @@ export default function HomeMonitor() {
             <button onClick={() => setIsSellModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 w-7 h-7 flex items-center justify-center rounded-full">✕</button>
             <h2 className="font-bold text-emerald-400 text-base border-b border-slate-800 pb-2">💰 บันทึกยอดขายและสรุปหลักฐานข้อมูล</h2>
             
-            {/* แสดงกล่องการ์ดแจ้งเตือนเมื่อทำรายการบันทึกสำเร็จ/กำลังดาวน์โหลด */}
             {sellSuccessMessage ? (
               <div className="p-4 rounded-xl text-center text-sm font-bold bg-emerald-950/50 text-emerald-400 border border-emerald-900/40 my-4 animate-pulse">
                 {sellSuccessMessage}
@@ -1209,25 +1251,15 @@ export default function HomeMonitor() {
         </div>
       )}
 
-{/* 🗑️ POPUP 4: หน้าต่างยืนยันการลบสินค้าและแจ้งเตือนลบสำเร็จ */}
       {isDeleteModalOpen && productToDelete && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 no-print">
           <div className="bg-[#1e293b] p-6 rounded-2xl shadow-2xl border border-slate-800 flex flex-col gap-4 w-full max-w-md relative animate-in zoom-in-95 duration-200">
-            
-            <h2 className="font-bold text-rose-500 text-base border-b border-slate-800 pb-2 flex items-center gap-2">
-              🚨 ยืนยันการลบข้อมูลสินค้า
-            </h2>
-
-            {/* ส่วนกล่องข้อความสถานะเมื่อลบสำเร็จ */}
+            <h2 className="font-bold text-rose-500 text-base border-b border-slate-800 pb-2 flex items-center gap-2">🚨 ยืนยันการลบข้อมูลสินค้า</h2>
             {deleteSuccessMessage ? (
-              <div className="p-4 rounded-xl text-center text-sm font-bold bg-rose-950/40 text-rose-400 border border-rose-900/50 my-2 animate-pulse">
-                {deleteSuccessMessage}
-              </div>
+              <div className="p-4 rounded-xl text-center text-sm font-bold bg-rose-950/40 text-rose-400 border border-rose-900/50 my-2 animate-pulse">{deleteSuccessMessage}</div>
             ) : (
               <>
                 <p className="text-xs text-slate-400">คุณแน่ใจใช่ไหมว่าต้องการลบสินค้าชิ้นนี้ออกจากฐานข้อมูล? เมื่อลบแล้วจะไม่สามารถกู้คืนได้</p>
-                
-                {/* กล่องแสดงรายละเอียดสินค้าแกะจาก Metadata */}
                 <div className="bg-[#111827] p-4 rounded-xl border border-slate-800 flex flex-col gap-2.5 text-xs font-sans">
                   <div>
                     <span className="text-slate-500 block text-[10px] uppercase font-bold">📦 ชื่อสินค้า:</span>
@@ -1243,29 +1275,15 @@ export default function HomeMonitor() {
                       <span className="text-slate-300 font-mono">
                         {productToDelete.name.includes('ขายแล้ว') 
                           ? (productToDelete.name.match(/เมื่อ: ([\d-]+)/)?.[1] || 'ไม่ระบุ')
-                          : (productToDelete.name.match(/รับเข้า: ([\d-]+)/)?.[1] || 'ไม่ระบุ')
+                          : (productToDelete.name.match(/รับเข้า: ([\d-]+)/)?.[1] || 'not found')
                         }
                       </span>
                     </div>
                   </div>
                 </div>
-
-                {/* ปุ่มกดยืนยันการทำงาน */}
                 <div className="flex gap-3 pt-2">
-                  <button 
-                    type="button" 
-                    onClick={() => { setIsDeleteModalOpen(false); setProductToDelete(null); }}
-                    className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl text-xs transition-colors"
-                  >
-                    ยกเลิก
-                  </button>
-                  <button 
-                    type="button" 
-                    onClick={() => handleDelete(productToDelete)}
-                    className="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-md shadow-rose-900/20"
-                  >
-                    💥 ยืนยันลบข้อมูล
-                  </button>
+                  <button type="button" onClick={() => { setIsDeleteModalOpen(false); setProductToDelete(null); }} className="flex-1 bg-slate-800 text-slate-300 font-bold py-2.5 rounded-xl text-xs cursor-pointer">ยกเลิก</button>
+                  <button type="button" onClick={() => handleDelete(productToDelete)} className="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-md cursor-pointer">💥 ยืนยันลบข้อมูล</button>
                 </div>
               </>
             )}
@@ -1273,36 +1291,19 @@ export default function HomeMonitor() {
         </div>
       )}
 
-{/* 📱 MOBILE SIDEBAR DRAWER (เมนูสไลด์ด้านข้างสำหรับมือถือ) */}
+      {/* 📱 MOBILE SIDEBAR DRAWER */}
       {isMobileMenuOpen && (
         <div className="md:hidden fixed inset-0 z-[60] no-print">
-          {/* Backdrop พื้นหลังสีดำโปร่งแสง กดแล้วจะปิดเมนู */}
-          <div 
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-          
-          {/* ตัวกล่องเมนูที่สไลด์ออกมาจากซ้าย */}
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsMobileMenuOpen(false)} />
           <div className="fixed inset-y-0 left-0 w-64 bg-[#1e293b] p-5 shadow-2xl flex flex-col justify-between border-r border-slate-800 animate-in slide-in-from-left duration-200">
             <div>
-              {/* ส่วนหัวของเมนูด้านข้าง */}
               <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-800">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-orange-600 text-white flex items-center justify-center font-black text-lg">A</div>
-                  <div>
-                    <h1 className="font-bold text-sm text-white">ASPC Manager</h1>
-                    <p className="text-[10px] text-slate-400">เมนูเลือกหมวดหมู่</p>
-                  </div>
+                  <div><h1 className="font-bold text-sm text-white">ASPC Manager</h1><p className="text-[10px] text-slate-400">เมนูเลือกหมวดหมู่</p></div>
                 </div>
-                <button 
-                  onClick={() => setIsMobileMenuOpen(false)} 
-                  className="text-slate-400 hover:text-white bg-slate-800 w-7 h-7 flex items-center justify-center rounded-full"
-                >
-                  ✕
-                </button>
+                <button onClick={() => setIsMobileMenuOpen(false)} className="text-slate-400 hover:text-white bg-slate-800 w-7 h-7 flex items-center justify-center rounded-full">✕</button>
               </div>
-
-              {/* รายการเมนูสไลด์เลือกหน้าจอ */}
               <nav className="flex flex-col gap-2">
                 {[
                   { id: 'dashboard', label: '📊 ภาพรวม (Dashboard)' },
@@ -1310,36 +1311,16 @@ export default function HomeMonitor() {
                   { id: 'sold', label: '🛒 ประวัติขาย (Sold)' },
                   { id: 'reports', label: '📄 ออกรายงาน (Reports)' }
                 ].map(menu => (
-                  <button 
-                    key={menu.id} 
-                    onClick={() => {
-                      setActiveMenu(menu.id);
-                      setIsMobileMenuOpen(false); // คลิกแล้วให้ปิดเมนูสไลด์อัตโนมัติ
-                    }} 
-                    className={`flex items-center w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 
-                    ${activeMenu === menu.id ? 'bg-orange-600 text-white shadow-md' : 'text-slate-400 hover:bg-[#111827] hover:text-slate-200'}`}
-                  >
-                    {menu.label}
-                  </button>
+                  <button key={menu.id} onClick={() => { setActiveMenu(menu.id); setIsMobileMenuOpen(false); }} className={`flex items-center w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeMenu === menu.id ? 'bg-orange-600 text-white shadow-md' : 'text-slate-400 hover:bg-[#111827] hover:text-slate-200'}`}>{menu.label}</button>
                 ))}
               </nav>
             </div>
-
-            {/* ส่วนท้ายของเมนูสไลด์ */}
-            <div className="border-t border-slate-800 pt-4">
+            <div className="border-t border-slate-800 pt-4 flex flex-col gap-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-emerald-400 font-bold">🟢 Admin Online</span>
-                <button 
-                  onClick={() => { 
-                    setIsLoggedIn(false); 
-                    setPassword(''); 
-                    setIsMobileMenuOpen(false);
-                  }} 
-                  className="text-[11px] text-rose-400 font-bold px-2 py-1 rounded bg-slate-800 border border-slate-700"
-                >
-                  ออกระบบ
-                </button>
+                <span className="text-xs text-emerald-400 font-bold">{currentUser?.display_name || 'Admin'} Online</span>
+                <button onClick={() => { setIsProfileModalOpen(true); setIsMobileMenuOpen(false); }} className="text-xs text-slate-400">⚙️ ตั้งค่า</button>
               </div>
+              <button onClick={handleLogout} className="w-full text-center text-xs text-rose-400 font-bold py-2 rounded bg-slate-800 border border-slate-700 cursor-pointer">ออกระบบ</button>
             </div>
           </div>
         </div>
@@ -1347,4 +1328,3 @@ export default function HomeMonitor() {
     </div>
   );
 }
-  
