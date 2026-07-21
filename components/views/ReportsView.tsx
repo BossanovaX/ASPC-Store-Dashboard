@@ -114,9 +114,9 @@ export default function ReportsView({ products }: { products: any[] }) {
           <div>
             <label className="text-xs text-slate-400 block mb-1.5 font-bold">2. เลือกพิมพ์แยกหมวดหมู่</label>
             <select value={docCategory} onChange={(e) => setDocCategory(e.target.value)} className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2.5 px-3 text-slate-200 text-sm focus:border-orange-500 focus:outline-none">
-              {['ทั้งหมด', 'CPU', 'GPU', 'Memory', 'Mainboard', 'Storage', 'Power Supply', 'Case', 'Cooler'].map(cat => (
-                <option key={cat} value={cat}>{cat === 'ทั้งหมด' ? '🌐 พิมพ์รวมทุกหมวดชิ้นส่วน' : cat}</option>
-              ))}
+              {['ทั้งหมด', 'CPU', 'GPU', 'Memory', 'Mainboard', 'Storage', 'Power Supply', 'Case', 'Cooler', 'Monitor'].map(cat => (
+  <option key={cat} value={cat}>{cat === 'ทั้งหมด' ? '🌐 พิมพ์รวมทุกหมวดชิ้นส่วน' : cat}</option>
+))}
             </select>
           </div>
         </div>

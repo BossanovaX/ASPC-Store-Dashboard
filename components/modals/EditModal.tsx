@@ -73,7 +73,7 @@ export default function EditModal({ isOpen, onClose, editingProduct, onSubmit, i
             <div>
               <label className="text-slate-400 block mb-1 font-bold">แก้ไขหมวดหมู่</label>
               <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm focus:border-amber-500 focus:outline-none">
-                <option value="CPU">CPU</option><option value="GPU">GPU</option><option value="Memory">Memory</option><option value="Mainboard">Mainboard</option><option value="Storage">Storage</option><option value="Power Supply">Power Supply</option><option value="Case">Case</option><option value="Cooler">Cooler</option>
+                <option value="CPU">CPU</option><option value="GPU">GPU</option><option value="Memory">Memory</option><option value="Mainboard">Mainboard</option><option value="Storage">Storage</option><option value="Power Supply">Power Supply</option><option value="Case">Case</option><option value="Cooler">Cooler</option><option value="Monitor">Monitor</option>
               </select>
             </div>
           </div>

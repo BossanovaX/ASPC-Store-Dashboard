@@ -68,8 +68,16 @@ export default function InputModal({ isOpen, onClose, onSubmit, isPending, messa
             <div>
               <label className="text-slate-400 block mb-1 font-bold">7. ประเภทสินค้า *</label>
               <select value={category} onChange={(e) => setCategory(e.target.value)} required className="w-full bg-[#111827] border border-slate-700 rounded-xl py-2 px-3 text-white text-sm">
-                <option value="CPU">CPU</option><option value="GPU">GPU</option><option value="Memory">Memory</option><option value="Mainboard">Mainboard</option><option value="Storage">Storage</option><option value="Power Supply">Power Supply</option><option value="Case">Case</option><option value="Cooler">Cooler</option>
-              </select>
+  <option value="CPU">CPU</option>
+  <option value="GPU">GPU</option>
+  <option value="Memory">Memory</option>
+  <option value="Mainboard">Mainboard</option>
+  <option value="Storage">Storage</option>
+  <option value="Power Supply">Power Supply</option>
+  <option value="Case">Case</option>
+  <option value="Cooler">Cooler</option>
+  <option value="Monitor">Monitor</option> {/* 👈 เพิ่มตัวเลือกนี้ */}
+</select>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

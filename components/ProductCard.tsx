@@ -92,7 +92,9 @@ export default function ProductCard({
     'Power Supply': 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
     Case: 'bg-slate-400/10 text-slate-300 border-slate-400/20',
     Cooler: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+    Monitor: 'bg-teal-500/10 text-teal-400 border-teal-500/20', // 👈 เพิ่มบรรทัดนี้
   };
+
 
   return (
     <div className="bg-[#151f32] rounded-3xl border border-slate-800/80 p-5 shadow-lg hover:shadow-2xl hover:border-slate-700/60 transition-all flex flex-col justify-between gap-4 font-sans text-xs">

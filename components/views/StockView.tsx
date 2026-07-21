@@ -87,10 +87,10 @@ export default function StockView({ products, onPreviewImage, onEdit, onSell, on
 
         {/* แถบปุ่มแท็บเลือกหมวดหมู่ */}
         <div className="flex flex-wrap gap-1.5 pb-1">
-          {['ทั้งหมด', 'CPU', 'GPU', 'Memory', 'Mainboard', 'Storage', 'Power Supply', 'Case', 'Cooler'].map((tab) => (
-            <button key={`stock-tab-${tab}`} onClick={() => setStockTab(tab)} className={`text-[11px] font-bold py-1.5 px-3 rounded-lg transition-all ${stockTab === tab ? 'bg-orange-600 text-white shadow-sm' : 'bg-[#111827] text-slate-400 hover:text-white'}`}>{tab === 'ทั้งหมด' ? '🌐 ทุกหมวด' : tab}</button>
-          ))}
-        </div>
+  {['ทั้งหมด', 'CPU', 'GPU', 'Memory', 'Mainboard', 'Storage', 'Power Supply', 'Case', 'Cooler', 'Monitor'].map((tab) => (
+    <button key={`stock-tab-${tab}`} onClick={() => setStockTab(tab)} className={`text-[11px] font-bold py-1.5 px-3 rounded-lg transition-all ${stockTab === tab ? 'bg-orange-600 text-white shadow-sm' : 'bg-[#111827] text-slate-400 hover:text-white'}`}>{tab === 'ทั้งหมด' ? '🌐 ทุกหมวด' : tab}</button>
+  ))}
+</div>
       </div>
 
       {/* Grid รายการสินค้า */}

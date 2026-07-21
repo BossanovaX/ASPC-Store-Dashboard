@@ -27,9 +27,13 @@ export default function DashboardView({ products }: { products: Product[] }) {
   let totalStockCostValue = 0; 
   let countSoldItems = 0;
 
-  const categoryCostMap: Record<string, number> = { 'CPU': 0, 'GPU': 0, 'Memory': 0, 'Mainboard': 0, 'Storage': 0, 'Power Supply': 0, 'Case': 0, 'Cooler': 0 };
-  const categoryFinancialMap: Record<string, { sales: number; profit: number }> = { 'CPU': { sales: 0, profit: 0 }, 'GPU': { sales: 0, profit: 0 }, 'Memory': { sales: 0, profit: 0 }, 'Mainboard': { sales: 0, profit: 0 }, 'Storage': { sales: 0, profit: 0 }, 'Power Supply': { sales: 0, profit: 0 }, 'Case': { sales: 0, profit: 0 }, 'Cooler': { sales: 0, profit: 0 } };
-
+  const categoryCostMap: Record<string, number> = { 
+    'CPU': 0, 'GPU': 0, 'Memory': 0, 'Mainboard': 0, 'Storage': 0, 'Power Supply': 0, 'Case': 0, 'Cooler': 0, 'Monitor': 0 
+  };
+  
+  const categoryFinancialMap: Record<string, { sales: number; profit: number }> = { 
+    'CPU': { sales: 0, profit: 0 }, 'GPU': { sales: 0, profit: 0 }, 'Memory': { sales: 0, profit: 0 }, 'Mainboard': { sales: 0, profit: 0 }, 'Storage': { sales: 0, profit: 0 }, 'Power Supply': { sales: 0, profit: 0 }, 'Case': { sales: 0, profit: 0 }, 'Cooler': { sales: 0, profit: 0 }, 'Monitor': { sales: 0, profit: 0 } 
+  };
   products.forEach((item) => {
     const isSold = item.is_sold === true || item.name.includes('ขายแล้ว');
     const cost = item.cost || 0;
@@ -64,7 +68,7 @@ export default function DashboardView({ products }: { products: Product[] }) {
 
   const donutData = Object.keys(categoryCostMap).map((cat) => ({
     name: cat, value: categoryCostMap[cat], 
-    color: { 'CPU': '#f97316', 'GPU': '#3b82f6', 'Memory': '#ec4899', 'Mainboard': '#10b981', 'Storage': '#a855f7', 'Power Supply': '#eab308', 'Case': '#64748b', 'Cooler': '#06b6d4' }[cat] || '#64748b'
+    color: { 'CPU': '#f97316', 'GPU': '#3b82f6', 'Memory': '#ec4899', 'Mainboard': '#10b981', 'Storage': '#a855f7', 'Power Supply': '#eab308', 'Case': '#64748b', 'Cooler': '#06b6d4', 'Monitor': '#14b8a6' }[cat] || '#64748b'
   })).filter(item => item.value > 0);
 
   const barData = Object.keys(categoryFinancialMap).map((cat) => ({
