@@ -25,8 +25,8 @@ export async function POST(request: Request) {
       image_url: image_url || '',
       is_sold: is_sold === true || is_sold === 'true',
       
-      // ล้างค่าว่างเปล่าให้เป็น null หรือ undefined เพื่อป้องกันเรื่อง Schema Cache
-      received_at: received_at && received_at.trim() !== '' ? received_at : null,
+      // 💡 🎯 แก้จุดนี้: บังคับใส่วันที่ ถ้าไม่มีส่งมาให้ใช้เวลาปัจจุบันทันที (ป้องกัน NULL ลง DB)
+      received_at: received_at && received_at.trim() !== '' ? received_at : new Date().toISOString(),
       buy_receipt_url: buy_receipt_url && buy_receipt_url.trim() !== '' ? buy_receipt_url : null,
       
       sold_at: sold_at && sold_at.trim() !== '' ? sold_at : null,
