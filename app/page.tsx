@@ -145,24 +145,46 @@ export default function HomeMonitor() {
 
   useEffect(() => { setHasMounted(true); }, []);
 
+  // 💡 เช็กสถานะ Session ค้างในเครื่องเดิม + ดักฟัง Event อัตโนมัติ (ไม่ต้องกดล็อกอินซ้ำ)
   useEffect(() => {
+    // 1. ฟังก์ชันดึงโปรไฟล์และเปิดหน้า Dashboard
+    const fetchUserProfile = async (userId: string) => {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('display_name, avatar_url')
+        .eq('id', userId)
+        .single();
+
+      if (profile) {
+        setCurrentUser(profile);
+        setNewDisplayName(profile.display_name);
+      }
+      setIsLoggedIn(true);
+    };
+
+    // 2. เช็ก Session ที่จำไว้ในเบราว์เซอร์เครื่องนี้
     const checkActiveSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('display_name, avatar_url')
-          .eq('id', session.user.id)
-          .single();
-        
-        if (profile) {
-          setCurrentUser(profile);
-          setNewDisplayName(profile.display_name);
-        }
-        setIsLoggedIn(true);
+        await fetchUserProfile(session.user.id);
       }
     };
+
     checkActiveSession();
+
+    // 3. ดักฟังสถานะ (จำการล็อกอินไว้ข้ามวัน/ข้ามแท็บ ไม่หลุดแน่นอน)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        await fetchUserProfile(session.user.id);
+      } else {
+        setIsLoggedIn(false);
+        setCurrentUser(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => { setStockPage(1); }, [stockTab, stockStartDate, stockEndDate, stockSortBy, stockSearchQuery]);
