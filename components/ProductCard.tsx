@@ -10,8 +10,8 @@ interface Product {
   category: string;
   image_url: string;
   is_sold: boolean;
-  received_at: string;
-  buy_receipt_url: string;
+  received_at?: string | null;
+  buy_receipt_url?: string | null;
   sold_at?: string | null;
   sold_price?: number | null;
   shipping_fee?: number | null;
@@ -36,22 +36,20 @@ export default function ProductCard({
   onSell,
   onDelete
 }: ProductCardProps) {
-  
   const isSold = item.is_sold === true || item.name.includes('ขายแล้ว');
   
-  // ตัดคำก้ามปูเผื่อกรณีข้อมูลประวัติเก่าพ่วงท้าย
+  // ตัดข้อความส่วนเกินในชื่อสำหรับข้อมูลเก่า
   const cleanName = item.name.split(' [')[0];
 
   // =========================================================
-  // 💡 ระบบ HYBRID DATA (เช็กจากคอลัมน์ตรงๆ ก่อน ถ้าไม่มีค่อยใช้ Regex แกะจากชื่อ)
+  // 💡 ระบบ HYBRID DATA (คอลัมน์ DB ก่อน -> ค่อยสลับไป Regex ข้อมูลเก่า)
   // =========================================================
   const matchReceive = item.name.match(/รับเข้า: ([\d-]+)/);
-  const receiveDate = item.received_at || (matchReceive ? matchReceive[1] : 'ไม่ระบุ');
+  const receiveDate = (item.received_at ? item.received_at.slice(0, 10) : null) || (matchReceive ? matchReceive[1] : 'ไม่ระบุ');
 
   const matchSell = item.name.match(/เมื่อ: ([\d-]+)/);
-  const soldDate = item.sold_at || (matchSell ? matchSell[1] : 'ไม่ระบุ');
+  const soldDate = (item.sold_at ? item.sold_at.slice(0, 10) : null) || (matchSell ? matchSell[1] : 'ไม่ระบุ');
 
-  // ฟังก์ชันล้างค่าอักขระส่วนเกินวงเล็บก้ามปูสำหรับ Regex ข้อมูลเก่า
   const cleanRegexUrl = (rawText: string | null): string | null => {
     if (!rawText) return null;
     const cleaned = rawText.replace(/[\]]/g, '').trim();
@@ -70,13 +68,13 @@ export default function ProductCard({
   const matchShip = item.name.match(/ค่าส่ง: ฿([\d.]+)/);
   const displayShippingFee = item.shipping_fee ?? parseFloat(matchShip ? matchShip[1] : '0');
 
-  // คำนวณงบกำไร
+  // คำนวณงบดุล
   const packFee = 30;
   const baseProfit = displaySoldPrice - item.cost - packFee - displayShippingFee;
   const displayCommission = item.commission_fee ?? (baseProfit > 0 ? baseProfit * 0.03 : 0);
   const netProfit = baseProfit - displayCommission;
 
-  // ฟังก์ชันตรวจสอบความถูกต้องลิงก์รูปภาพก่อนแสดงผลป๊อปอัป
+  // ตรวจสอบความถูกต้องของลิงก์ภาพก่อนแสดงผล Lightbox
   const handleImageClick = (url: string | null) => {
     if (!url || url === 'ไม่มีหลักฐาน' || url === 'ไม่มีหลักฐานซื้อ' || !url.startsWith('http')) {
       alert('❌ รายการนี้ไม่พบไฟล์รูปภาพสลิปในระบบ หรือลิงก์ที่เก็บไว้เสียหายครับ');
@@ -99,7 +97,7 @@ export default function ProductCard({
   return (
     <div className="bg-[#151f32] rounded-3xl border border-slate-800/80 p-5 shadow-lg hover:shadow-2xl hover:border-slate-700/60 transition-all flex flex-col justify-between gap-4 font-sans text-xs">
       
-      {/* ส่วนหัวภาพสินค้าและรายละเอียดพื้นฐาน */}
+      {/* ส่วนหัวภาพสินค้าและรายละเอียด */}
       <div className="flex gap-4">
         <div className="w-24 h-24 rounded-xl overflow-hidden bg-[#111827] border border-slate-800 shrink-0 relative">
           <img 
@@ -132,7 +130,7 @@ export default function ProductCard({
         </div>
       </div>
 
-      {/* 💵 ส่วนข้อมูลงบบัญชีภายในตัวการ์ด */}
+      {/* ข้อมูลงบบัญชี */}
       <div className="flex flex-col gap-2 font-sans bg-[#0b111e]/90 p-3.5 rounded-2xl border border-slate-900/40">
         
         <div className="flex justify-between items-center text-slate-400">
@@ -140,7 +138,7 @@ export default function ProductCard({
           <span className="font-mono font-bold text-slate-200">฿{item.cost.toLocaleString()}</span>
         </div>
 
-        {/* ปุ่มดูสลิปตอนซื้อ (โชว์ตลอดตราบใดที่มีข้อมูลลิงก์ในระบบ) */}
+        {/* ปุ่มดูสลิปตอนซื้อ */}
         {buyReceiptUrl && buyReceiptUrl !== 'ไม่มีหลักฐานซื้อ' && buyReceiptUrl !== 'Grid_ไม่มีหลักฐานซื้อ' && (
           <div className="flex justify-between items-center text-[11px]">
             <span className="text-slate-500 flex items-center gap-1">📄 หลักฐานสลิปทุนซื้อ:</span>
@@ -186,7 +184,7 @@ export default function ProductCard({
               <span className="font-mono font-black text-orange-400 text-sm">฿{Math.max(0, netProfit).toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
             </div>
 
-            {/* ปุ่มดูสลิปซื้อขายลูกค้า */}
+            {/* ปุ่มดูสลิปซื้อขาย */}
             {saleProofUrl && saleProofUrl !== 'ไม่มีหลักฐาน' && (
               <div className="flex justify-between items-center text-slate-400 border-t border-slate-800/80 pt-2 text-[11px]">
                 <span className="text-slate-400 flex items-center gap-1">📄 หลักฐานการซื้อขาย/โอนเงิน:</span>
@@ -214,7 +212,7 @@ export default function ProductCard({
               </div>
             )}
 
-            {/* ปุ่มดูรูปถ่ายแพ็กของ */}
+            {/* ปุ่มดูภาพถ่ายแพ็กของ */}
             {packageImageUrl && packageImageUrl !== 'ไม่มีภาพถ่ายเพิ่มเติม' && (
               <div className="flex justify-between items-center text-slate-400 text-[11px]">
                 <span className="text-slate-400 flex items-center gap-1">📄 ภาพถ่ายสินค้าตอนแพ็กของ:</span>
@@ -241,11 +239,34 @@ export default function ProductCard({
         )}
       </div>
 
-      {/* กลุ่มปุ่มควบคุม */}
+      {/* ปุ่มกดควบคุม */}
       <div className="flex gap-2 justify-end pt-2 border-t border-slate-800/40 mt-1">
-        <button type="button" onClick={() => onEdit(item)} className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white py-1.5 px-4 rounded-xl font-bold text-[11px] transition-all flex items-center gap-1.5 shadow-md shadow-orange-950/20 cursor-pointer">📄 แก้ไขรายการ</button>
-        {!isSold && (<button type="button" onClick={() => onSell(item)} className="bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 px-4 rounded-xl font-bold text-[11px] transition-all shadow-md shadow-emerald-900/10 flex items-center gap-1 cursor-pointer">💰 บันทึกขายออก</button>)}
-        <button type="button" onClick={() => onDelete(item)} className="text-rose-400/80 hover:text-rose-400 hover:bg-rose-950/30 px-3 py-1.5 rounded-xl transition-all font-bold flex items-center gap-1 text-[11px] cursor-pointer" title="ลบสินค้า">🗑️ ลบ</button>
+        <button 
+          type="button" 
+          onClick={() => onEdit(item)} 
+          className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white py-1.5 px-4 rounded-xl font-bold text-[11px] transition-all flex items-center gap-1.5 shadow-md shadow-orange-950/20 cursor-pointer"
+        >
+          📄 แก้ไขรายการ
+        </button>
+        
+        {!isSold && (
+          <button 
+            type="button" 
+            onClick={() => onSell(item)} 
+            className="bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 px-4 rounded-xl font-bold text-[11px] transition-all shadow-md shadow-emerald-900/10 flex items-center gap-1 cursor-pointer"
+          >
+            💰 บันทึกขายออก
+          </button>
+        )}
+
+        <button 
+          type="button" 
+          onClick={() => onDelete(item)} 
+          className="text-rose-400/80 hover:text-rose-400 hover:bg-rose-950/30 px-3 py-1.5 rounded-xl transition-all font-bold flex items-center gap-1 text-[11px] cursor-pointer" 
+          title="ลบสินค้า"
+        >
+          🗑️ ลบ
+        </button>
       </div>
 
     </div>
